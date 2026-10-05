@@ -17,6 +17,7 @@ import {
   normalizeBattle,
   pieceAt,
   type AlignMode,
+  type AlignTarget,
   type Battle,
   type BoardWarning,
   type EntityRef,
@@ -51,7 +52,7 @@ export interface MoveSession {
   /** Waiting for a click on an enemy facing. */
   aligning: boolean;
   /** Align-to-target preview awaiting confirmation. */
-  align: { targetId: string; facing: Facing; mode: AlignMode } | null;
+  align: { target: AlignTarget; facing: Facing; mode: AlignMode } | null;
 }
 
 export interface RingOptions {

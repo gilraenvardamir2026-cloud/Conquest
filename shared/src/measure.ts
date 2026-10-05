@@ -10,18 +10,22 @@ import {
   EPS,
   mul,
   normalize,
+  localToWorld,
   pointInPolygon,
+  pointPolygonDistance,
   polygonDistance,
   polygonsOverlap,
   sub,
+  type Frame,
   type Polygon,
   type Pose,
   type Vec,
 } from './geometry';
 import { boardStandPolygons, CONTACT_TOLERANCE, objectiveMarkerPolygon, terrainPolygon } from './board';
-import { characterBox, regimentBox, segmentsTotal, sweepPoses, touchingParts, type MoveSegment, type PieceBox } from './movement';
-import { characterPolygon, regimentPolygons, slotPolygon } from './regiment';
-import type { Battle, EntityRef, Regiment } from './types';
+import { OBJECTIVE_MARKER_SIDE } from './presets';
+import { characterBox, nearestFacing, regimentBox, segmentsTotal, sweepPoses, touchingParts, type Facing, type MoveSegment, type PieceBox } from './movement';
+import { characterPolygon, regimentFrame, regimentPolygons, slotPolygon } from './regiment';
+import type { Battle, EntityRef, PlayerSeat, Regiment } from './types';
 
 // ---------------------------------------------------------------------------
 // Shapes of things
@@ -297,4 +301,56 @@ export function moveWarnings(b: Battle, piece: MovingPiece, pose: Pose, segments
     for (const id of crossed) out.push({ kind: 'impassable', text: `Crosses Impassable ${b.terrain.find((t) => t.id === id)!.name}`, ids: [id] });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Align targets
+// ---------------------------------------------------------------------------
+
+/** Things a piece can align its front edge against: enemy regiments and objective markers. */
+export interface AlignTarget {
+  kind: 'regiment' | 'objective';
+  id: string;
+}
+
+/** Frame and display name of an align target, or null if it is not on the board. */
+export function alignTargetFrame(b: Battle, t: AlignTarget): { frame: Frame; name: string } | null {
+  if (t.kind === 'regiment') {
+    const r = b.regiments.find((x) => x.id === t.id);
+    return r && r.location === 'board' && !r.garrisonId ? { frame: regimentFrame(r), name: r.name } : null;
+  }
+  const m = b.objectiveMarkers.find((x) => x.id === t.id);
+  if (!m || m.destroyed) return null;
+  const s = OBJECTIVE_MARKER_SIDE;
+  return { frame: { x: m.x - s / 2, y: m.y - s / 2, angle: 0, w: s, d: s }, name: `objective marker ${m.label ?? '•'}` };
+}
+
+/** How a facing is called: a regiment's front, flanks and rear; a marker's sides as seen on the board. */
+export function facingName(kind: AlignTarget['kind'], f: Facing): string {
+  if (kind === 'objective') return { front: 'top side', rear: 'bottom side', left: 'left side', right: 'right side' }[f];
+  return { front: 'front', rear: 'rear', left: 'left flank', right: 'right flank' }[f];
+}
+
+/**
+ * The align target nearest to point p (within `reach` inches) and the facing
+ * whose edge is closest to p. Candidates are enemy regiments of `owner` and
+ * every objective marker still on the board.
+ */
+export function nearestAlignTarget(b: Battle, p: Vec, owner: PlayerSeat, reach = 3): { target: AlignTarget; facing: Facing } | null {
+  const cands: AlignTarget[] = [
+    ...b.regiments.filter((r) => r.owner !== owner).map((r) => ({ kind: 'regiment' as const, id: r.id })),
+    ...b.objectiveMarkers.map((m) => ({ kind: 'objective' as const, id: m.id })),
+  ];
+  let best: { target: AlignTarget; facing: Facing } | null = null;
+  let bd = reach;
+  for (const t of cands) {
+    const f = alignTargetFrame(b, t)?.frame;
+    if (!f) continue;
+    const d = pointPolygonDistance(p, [localToWorld(f, 0, 0), localToWorld(f, f.w, 0), localToWorld(f, f.w, f.d), localToWorld(f, 0, f.d)]);
+    if (d < bd) {
+      bd = d;
+      best = { target: t, facing: nearestFacing(f, p) };
+    }
+  }
+  return best;
 }

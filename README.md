@@ -153,14 +153,18 @@ settings (⚙ = in the Settings dialog).
 14. **Free drag distance** is the straight-line displacement of the frame
     corner that moved farthest. **Align** segments count the distance the front
     centre travels. **Rotate about the centre** counts 0" towards the total and
-    reports the angle; each rotate segment is limited to ±180°.
-15. **Align to target** puts the front edge flush against the chosen enemy
-    facing (a side of its full bounding rectangle). Default *Max contact*: the
-    smaller of the two edges sits fully against the larger, at the lateral
-    position nearest to where the front centre was. *Centred* is the
-    alternative. The facing picked is the edge nearest the click.
-16. **Sideways limit** compares the session's total sideways distance with half
-    of March.
+    reports the angle (it uses no movement); each rotate segment is limited
+    to ±180°.
+15. **Align to target** puts the front edge flush against a side of an enemy
+    regiment (its front, a flank or its rear, taken from its full bounding
+    rectangle) or of an objective marker (top, bottom, left or right side of
+    its 54 mm square). Characters are never targets, since they always sit in
+    a regiment. Default *Max contact*: the smaller of the two edges sits fully
+    against the larger, at the lateral position nearest to where the front
+    centre was. *Centred* is the alternative. The side picked is the edge
+    nearest the click.
+16. **Sideways limit** adds up every sideways segment of the move and compares
+    the sum with half of March.
 17. **Contact** is any two stands of different pieces within 0.02", corners
     included. Touching stretches are drawn in orange, corner touches as dots.
 18. **"Within 1" of an enemy"** is measured stand to stand. Enemy pieces that
@@ -218,8 +222,9 @@ settings (⚙ = in the Settings dialog).
 5. **Enter** commits the whole move as one log line, e.g.
    `Militia forward 6.0", wheel R 1.2" (total 7.2")`. **Esc** puts it back,
    **Backspace** drops the last segment. Ctrl+Z undoes a committed move.
-6. **Align to target**: during a move, *Pick an enemy facing…*, then click near
-   the enemy's front, flank or rear. The proposed pose and the distance the
+6. **Align to target**: during a move, *Pick a target…*, then click near an
+   enemy regiment's front, flank or rear, or near a side of an objective
+   marker. The proposed pose and the distance the
    front centre travels are previewed; *Apply* (Enter) adds it as a segment.
 
 ### Measuring

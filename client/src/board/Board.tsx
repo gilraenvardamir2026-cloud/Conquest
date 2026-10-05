@@ -20,19 +20,17 @@ import {
   localToWorld,
   makeId,
   moveWarnings,
-  nearestFacing,
+  nearestAlignTarget,
   normAngle,
   pieceAt,
-  polygonDistance,
-  regimentFrame,
   regimentStandGeoms,
   rightVec,
   rotateSegment,
   sidewaysSegment,
   wheelSegment,
-  boxCorners,
   characterPolygon,
   objectiveMarkerPolygon,
+  type AlignTarget,
   type Facing,
   type MovingPiece,
   type Pose,
@@ -80,7 +78,7 @@ export function Board() {
   const session = useStore((s) => s.moveSession);
   const measure = useStore((s) => s.measure);
   const { select, setView, setViewport, dispatch, setTool, notify } = useStore.getState();
-  const [alignHover, setAlignHover] = useState<{ targetId: string; facing: Facing } | null>(null);
+  const [alignHover, setAlignHover] = useState<{ target: AlignTarget; facing: Facing } | null>(null);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -238,23 +236,8 @@ export function Board() {
     }
   };
 
-  /** Enemy regiment facing under / near the pointer while picking an Align target. */
-  const findAlignTarget = (p: Vec): { targetId: string; facing: Facing } | null => {
-    if (!session) return null;
-    const owner = moving?.owner;
-    let best: { targetId: string; facing: Facing } | null = null;
-    let bd = 3;
-    for (const r of battle.regiments) {
-      if (r.location !== 'board' || r.garrisonId || r.owner === owner) continue;
-      const f = regimentFrame(r);
-      const d = polygonDistance([{ x: p.x, y: p.y }, { x: p.x + 1e-6, y: p.y }, { x: p.x, y: p.y + 1e-6 }], boxCorners(f, { u0: 0, u1: f.w, d: f.d })).distance;
-      if (d < bd) {
-        bd = d;
-        best = { targetId: r.id, facing: nearestFacing(f, p) };
-      }
-    }
-    return best;
-  };
+  /** Enemy regiment or objective marker facing near the pointer while picking an Align target. */
+  const findAlignTarget = (p: Vec) => (session && moving ? nearestAlignTarget(battle, p, moving.owner) : null);
 
   const onEntityDown = (sel: Selection) => (e: RPointerEvent<SVGElement>) => {
     if (e.button !== 0 || space.current) return;
@@ -263,7 +246,7 @@ export function Board() {
       e.stopPropagation();
       const t = findAlignTarget(p);
       if (t) useStore.getState().setAlign({ ...t, mode: 'contact' });
-      else notify('Click a facing of an enemy regiment');
+      else notify('Click a side of an enemy regiment or an objective marker');
       return;
     }
     if (tool === 'distance') {
@@ -777,7 +760,7 @@ export function Board() {
         <div className="board-hint">Click to add points · double-click or Enter to finish · Backspace removes the last point · Esc cancels</div>
       )}
       {(tool === 'placeZone' || tool === 'placeObjective') && <div className="board-hint">Click on the board to place · Esc cancels</div>}
-      {session?.aligning && <div className="board-hint">Click a facing (front, flank or rear) of an enemy regiment · Esc cancels</div>}
+      {session?.aligning && <div className="board-hint">Click a side of an enemy regiment (front, flank, rear) or of an objective marker · Esc cancels</div>}
       {!session?.aligning && tool === 'ruler' && <div className="board-hint">Drag to measure · snaps to stand corners and edge midpoints (Alt: no snap) · P pins</div>}
       {!session?.aligning && tool === 'distance' && <div className="board-hint">Click two things to see their closest distance · P pins</div>}
       {!session?.aligning && tool === 'ring' && <div className="board-hint">Click a regiment or character (Alt-click a single stand) · choose ranges in the panel · P pins</div>}

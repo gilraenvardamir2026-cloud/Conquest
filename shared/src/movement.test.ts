@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBattle } from './board';
 import { dist, mmToIn, polygonDistance, polygonsOverlap, rectCorners, type Pose } from './geometry';
-import { boardContacts, closestBetween, moveWarnings } from './measure';
+import { alignTargetFrame, boardContacts, closestBetween, facingName, moveWarnings, nearestAlignTarget } from './measure';
 import {
   alignToFacing,
   boxCorners,
@@ -159,6 +159,46 @@ describe('align to target', () => {
     expect(nearestFacing(tf, { x: 33, y: 5 })).toBe('front');
     expect(nearestFacing(tf, { x: 28, y: 11 })).toBe('left');
     expect(nearestFacing(tf, { x: 33, y: 20 })).toBe('rear');
+  });
+});
+
+describe('align to an objective marker', () => {
+  // Scenario 1: marker A (P1) at (36, 36), marker B (P2) at (36, 12); 54 mm squares.
+  const b0 = createBattle({ id: 'b', scenarioId: 's1' });
+  const b: Battle = { ...b0, regiments: [reg('me', 'p1', { x: 30, y: 25, angle: 0 }), reg('foe', 'p2', { x: 50, y: 20, angle: 180 }), reg('pal', 'p1', { x: 10, y: 20, angle: 0 })] };
+  const markerA = b.objectiveMarkers.find((m) => m.label === 'A')!;
+  const markerB = b.objectiveMarkers.find((m) => m.label === 'B')!;
+
+  it('frames the marker as an axis-aligned 54 mm square and names its sides', () => {
+    const t = alignTargetFrame(b, { kind: 'objective', id: markerB.id })!;
+    close(t.frame, { x: 36 - D1 / 2, y: 12 - D1 / 2 });
+    expect(t.frame.w).toBeCloseTo(D1, 9);
+    expect(t.name).toBe('objective marker B');
+    expect(facingName('objective', 'rear')).toBe('bottom side');
+    expect(facingName('regiment', 'left')).toBe('left flank');
+  });
+
+  it('a regiment below marker B aligns flush against its bottom side, covering it', () => {
+    const t = alignTargetFrame(b, { kind: 'objective', id: markerB.id })!;
+    const { pose } = alignToFacing(b.regiments[0], box3, t.frame, 'rear');
+    expect(pose.angle).toBeCloseTo(0, 9);
+    expect(pose.y).toBeCloseTo(12 + D1 / 2, 9); // front edge on the marker's bottom side
+    const [fl, fr] = boxCorners(pose, box3);
+    expect(fl.x).toBeLessThanOrEqual(36 - D1 / 2 + 1e-9); // the wider front covers the whole side
+    expect(fr.x).toBeGreaterThanOrEqual(36 + D1 / 2 - 1e-9);
+  });
+
+  it('picks enemy regiments and markers near the pointer, never friends', () => {
+    expect(nearestAlignTarget(b, { x: 36, y: 14 }, 'p1')).toEqual({ target: { kind: 'objective', id: markerB.id }, facing: 'rear' });
+    expect(nearestAlignTarget(b, { x: 34, y: 36 }, 'p1')?.target).toEqual({ kind: 'objective', id: markerA.id });
+    expect(nearestAlignTarget(b, { x: 47, y: 18 }, 'p1')?.target).toEqual({ kind: 'regiment', id: 'foe' });
+    expect(nearestAlignTarget(b, { x: 13, y: 19 }, 'p1')).toBeNull(); // only a friendly regiment there
+    expect(nearestAlignTarget(b, { x: 13, y: 19 }, 'p2')?.target).toEqual({ kind: 'regiment', id: 'pal' });
+  });
+
+  it('a destroyed marker is no longer a target', () => {
+    const gone: Battle = { ...b, objectiveMarkers: b.objectiveMarkers.map((m) => (m.id === markerB.id ? { ...m, destroyed: true } : m)) };
+    expect(nearestAlignTarget(gone, { x: 36, y: 14 }, 'p1')).toBeNull();
   });
 });
 

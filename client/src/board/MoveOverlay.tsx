@@ -3,12 +3,13 @@
 
 import type { PointerEvent as RPointerEvent } from 'react';
 import {
+  alignTargetFrame,
   alignToFacing,
   boxCentre,
   boxCorners,
   facingEdge,
   localToWorld,
-  regimentFrame,
+  type AlignTarget,
   type Battle,
   type Facing,
   type PieceBox,
@@ -87,25 +88,25 @@ export function AlignPreview({
   b: Battle;
   pose: Pose;
   box: PieceBox;
-  hover: { targetId: string; facing: Facing } | null;
-  pending: { targetId: string; facing: Facing; mode: 'contact' | 'centre' } | null;
+  hover: { target: AlignTarget; facing: Facing } | null;
+  pending: { target: AlignTarget; facing: Facing; mode: 'contact' | 'centre' } | null;
   fs: number;
   flip: boolean;
   px: number;
 }) {
-  const edgeOf = (targetId: string, facing: Facing) => {
-    const t = b.regiments.find((r) => r.id === targetId);
-    return t ? facingEdge(regimentFrame(t), facing) : null;
+  const edgeOf = (target: AlignTarget, facing: Facing) => {
+    const t = alignTargetFrame(b, target);
+    return t ? facingEdge(t.frame, facing) : null;
   };
   const out: React.ReactNode[] = [];
-  const h = hover ? edgeOf(hover.targetId, hover.facing) : null;
+  const h = hover ? edgeOf(hover.target, hover.facing) : null;
   if (h) out.push(<line key="h" x1={h.a.x} y1={h.a.y} x2={h.b.x} y2={h.b.y} stroke="#d500f9" strokeWidth={6 * px} strokeLinecap="round" opacity={0.8} />);
   if (pending) {
-    const t = b.regiments.find((r) => r.id === pending.targetId);
+    const t = alignTargetFrame(b, pending.target);
     if (t) {
-      const e = facingEdge(regimentFrame(t), pending.facing);
+      const e = facingEdge(t.frame, pending.facing);
       out.push(<line key="e" x1={e.a.x} y1={e.a.y} x2={e.b.x} y2={e.b.y} stroke="#d500f9" strokeWidth={6 * px} strokeLinecap="round" />);
-      const res = alignToFacing(pose, box, regimentFrame(t), pending.facing, pending.mode);
+      const res = alignToFacing(pose, box, t.frame, pending.facing, pending.mode);
       const corners = boxCorners(res.pose, box);
       out.push(<polygon key="p" points={pts(corners)} fill="rgba(213,0,249,0.15)" stroke="#d500f9" strokeWidth={2 * px} strokeDasharray={`${6 * px} ${3 * px}`} />);
       const fc = localToWorld(res.pose, (box.u0 + box.u1) / 2, box.d / 2);

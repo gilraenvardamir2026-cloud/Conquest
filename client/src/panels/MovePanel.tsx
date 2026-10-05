@@ -3,12 +3,13 @@
 
 import { useState } from 'react';
 import {
+  alignTargetFrame,
   alignToFacing,
+  facingName,
   fmtIn,
   forwardSegment,
   moveWarnings,
   pieceAt,
-  regimentFrame,
   rotateSegment,
   segmentsTotal,
   sidewaysSegment,
@@ -56,8 +57,8 @@ export function MovePanel() {
   const march = me.march;
   const sideTotal = segs.filter((s) => s.kind === 'sideways').reduce((a, s) => a + s.distance, 0);
   const add = (seg: MoveSegment) => st.addSegment(seg);
-  const target = m.align ? b.regiments.find((r) => r.id === m.align!.targetId) : undefined;
-  const alignRes = m.align && target ? alignToFacing(base, me.box, regimentFrame(target), m.align.facing, m.align.mode) : null;
+  const target = m.align ? alignTargetFrame(b, m.align.target) : null;
+  const alignRes = m.align && target ? alignToFacing(base, me.box, target.frame, m.align.facing, m.align.mode) : null;
 
   const addWheel = (dir: 'left' | 'right') => {
     if (!wheel) return;
@@ -126,19 +127,19 @@ export function MovePanel() {
       <Section title="Align to target">
         {!m.aligning && !m.align && (
           <button onClick={() => st.setAligning(true)} disabled={m.piece.kind !== 'regiment' && m.piece.kind !== 'character'}>
-            Pick an enemy facing…
+            Pick a target…
           </button>
         )}
         {m.aligning && (
           <div className="btn-row">
-            <span className="muted small">Click the front, a flank or the rear of an enemy regiment.</span>
+            <span className="muted small">Click the front, a flank or the rear of an enemy regiment, or a side of an objective marker.</span>
             <button onClick={() => st.setAligning(false)}>Cancel</button>
           </div>
         )}
         {m.align && target && alignRes && (
           <>
             <div>
-              Front edge flush against the {m.align.facing === 'left' || m.align.facing === 'right' ? `${m.align.facing} flank` : m.align.facing} of <b>{target.name}</b>: front centre travels <b>{fmtIn(alignRes.travel)}</b>.
+              Front edge flush against the {facingName(m.align.target.kind, m.align.facing)} of <b>{target.name}</b>: front centre travels <b>{fmtIn(alignRes.travel)}</b>.
             </div>
             <div className="btn-row">
               <span className="row-label">Position</span>

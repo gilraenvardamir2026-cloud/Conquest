@@ -3,13 +3,14 @@
 
 import {
   alignSegment,
+  alignTargetFrame,
   alignToFacing,
   closestBetween,
+  facingName,
   forwardSegment,
   makeId,
   pieceAt,
   refName,
-  regimentFrame,
   rotateSegment,
   sidewaysSegment,
   type EntityRef,
@@ -57,12 +58,12 @@ export function applyAlign() {
   const st = useStore.getState();
   const m = st.moveSession;
   if (!m?.align) return;
-  const target = st.battle.regiments.find((r) => r.id === m.align!.targetId);
+  const target = alignTargetFrame(st.battle, m.align.target);
   const base = sessionPose({ ...m, live: null });
   const box = pieceAt(st.battle, m.piece, m.start)?.box;
   if (!target || !box) return;
-  const res = alignToFacing(base, box, regimentFrame(target), m.align.facing, m.align.mode);
-  st.addSegment(alignSegment(base, res.pose, box, `${target.name} ${m.align.facing}`));
+  const res = alignToFacing(base, box, target.frame, m.align.facing, m.align.mode);
+  st.addSegment(alignSegment(base, res.pose, box, `${target.name} ${facingName(m.align.target.kind, m.align.facing)}`));
 }
 
 /** P: pin the current ruler, distance or range rings so they stay until cleared. */
