@@ -43,23 +43,42 @@ export function ContactLayer({ b, px }: { b: Battle; px: number }) {
   );
 }
 
-export function RulerLine({ a, b, fs, flip, px, pinned }: { a: Vec; b: Vec; fs: number; flip: boolean; px: number; pinned?: boolean }) {
+export function RulerLine({ a, b, fs, flip, px, pinned, color = RULER, tag }: { a: Vec; b: Vec; fs: number; flip: boolean; px: number; pinned?: boolean; color?: string; tag?: string }) {
   const m = mid(a, b);
   return (
     <g pointerEvents="none">
       <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#fff" strokeWidth={5 * px} strokeLinecap="round" />
-      <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={RULER} strokeWidth={2 * px} strokeDasharray={pinned ? undefined : `${6 * px} ${3 * px}`} />
-      <circle cx={a.x} cy={a.y} r={3.5 * px} fill={RULER} />
-      <circle cx={b.x} cy={b.y} r={3.5 * px} fill={RULER} />
-      <Txt x={m.x} y={m.y - fs * 0.9} fs={fs * 1.1} flip={flip} weight={800} fill={RULER}>
+      <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={2 * px} strokeDasharray={pinned ? undefined : `${6 * px} ${3 * px}`} />
+      <circle cx={a.x} cy={a.y} r={3.5 * px} fill={color} />
+      <circle cx={b.x} cy={b.y} r={3.5 * px} fill={color} />
+      <Txt x={m.x} y={m.y - fs * 0.9} fs={fs * 1.1} flip={flip} weight={800} fill={color}>
         {fmtIn(dist(a, b))}
         {pinned ? ' 📌' : ''}
+        {tag ? ` · ${tag}` : ''}
       </Txt>
     </g>
   );
 }
 
-export function DistanceLine({ b, a1, a2, fs, flip, px, pinned }: { b: Battle; a1: EntityRef; a2: EntityRef; fs: number; flip: boolean; px: number; pinned?: boolean }) {
+export function DistanceLine({
+  b,
+  a1,
+  a2,
+  fs,
+  flip,
+  px,
+  pinned,
+  color = DIST,
+}: {
+  b: Battle;
+  a1: EntityRef;
+  a2: EntityRef;
+  fs: number;
+  flip: boolean;
+  px: number;
+  pinned?: boolean;
+  color?: string;
+}) {
   const r = closestBetween(b, a1, a2);
   if (!r) return null;
   const m = mid(r.a, r.b);
@@ -68,13 +87,13 @@ export function DistanceLine({ b, a1, a2, fs, flip, px, pinned }: { b: Battle; a
   return (
     <g pointerEvents="none">
       <line x1={r.a.x} y1={r.a.y} x2={r.b.x} y2={r.b.y} stroke="#fff" strokeWidth={5 * px} />
-      <line x1={r.a.x} y1={r.a.y} x2={r.b.x} y2={r.b.y} stroke={DIST} strokeWidth={2 * px} strokeDasharray={`${5 * px} ${3 * px}`} />
-      <circle cx={r.a.x} cy={r.a.y} r={3 * px} fill={DIST} />
-      <circle cx={r.b.x} cy={r.b.y} r={3 * px} fill={DIST} />
-      <Txt x={m.x} y={m.y - fs * 0.9} fs={fs * 1.05} flip={flip} weight={800} fill={DIST}>
+      <line x1={r.a.x} y1={r.a.y} x2={r.b.x} y2={r.b.y} stroke={color} strokeWidth={2 * px} strokeDasharray={`${5 * px} ${3 * px}`} />
+      <circle cx={r.a.x} cy={r.a.y} r={3 * px} fill={color} />
+      <circle cx={r.b.x} cy={r.b.y} r={3 * px} fill={color} />
+      <Txt x={m.x} y={m.y - fs * 0.9} fs={fs * 1.05} flip={flip} weight={800} fill={color}>
         {text}
       </Txt>
-      <Txt x={m.x} y={m.y + fs * 0.9} fs={fs * 0.8} flip={flip} fill={DIST}>
+      <Txt x={m.x} y={m.y + fs * 0.9} fs={fs * 0.8} flip={flip} fill={color}>
         {refName(b, a1)} ↔ {refName(b, a2)}
       </Txt>
     </g>

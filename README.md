@@ -7,32 +7,49 @@ exactly as with miniatures and a tape measure.
 
 ## Status
 
-The project is built in five milestones. **Milestones 1–3 are complete**:
-single-player, local only.
+The project is built in five milestones. **Milestones 1–4 are complete**:
+two players on different computers share a room by link, with spectators,
+live presence and server-rolled dice.
 
 | # | Milestone | State |
 |---|-----------|-------|
 | 1 | Foundations: shared types, reducer, geometry + tests, board, scenarios, terrain, regiments, characters, wounds, objective markers | done |
 | 2 | Movement and measuring (move sessions, handles, ruler, distances, range rings, contact, Align to target) | done |
 | 3 | Facing arcs and line of sight | done |
-| 4 | Multiplayer (server, rooms, seats, presence, persistence) and RANDOM.ORG dice | next |
-| 5 | Polish, roster import/export, accessibility pass, Dockerfile, deploy guide | — |
+| 4 | Multiplayer (server, rooms, seats, presence, persistence) and RANDOM.ORG dice | done |
+| 5 | Polish, roster import/export, accessibility pass, Dockerfile, deploy guide | next |
 
 ## Run locally
 
-Requires Node 20+.
+Requires Node 22+.
 
 ```sh
 npm install
-npm run dev        # client on http://localhost:5173
-npm test           # Vitest (shared geometry, layout, wounds, reducer, scenarios)
-npm run typecheck  # tsc for shared and client
-npm run build      # production build of the client into client/dist
+npm run dev        # server on :3001 + client on http://localhost:5173 (proxied)
+npm test           # Vitest: shared geometry/rules/reducer and the server
+npm run typecheck  # tsc for shared, client and server
+npm run build      # build the client into client/dist
+npm start          # one service on http://localhost:3001 serving the built client
 ```
 
-In milestone 1 the battle autosaves to the browser's localStorage; **Save** and
-**Load** in the toolbar export/import it as JSON. The **Acting as** switch in
-the toolbar stands in for real player seats until multiplayer arrives.
+Open http://localhost:5173 (dev) or :3001 (after `npm run build && npm start`),
+create a battle and send the link to your opponent. To try two players on one
+machine, use two different browsers (or a private window): each browser keeps
+its own seat token.
+
+Server settings (environment variables):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | 3001 | Port to listen on |
+| `DATA_DIR` | `./data` | Folder for room files (keep it on a persistent disk) |
+| `RANDOM_ORG_API_KEY` | — | RANDOM.ORG key; without it dice use Node's `crypto` fallback |
+
+For example `RANDOM_ORG_API_KEY=your-key npm run dev`. Never commit the key
+(`.env` is git-ignored); it stays on the server and is never sent to browsers.
+
+`/local` is an offline practice mode: one browser, autosaved to localStorage,
+with the **Acting as** switch standing in for the two seats.
 
 ## Repository layout
 
@@ -49,8 +66,11 @@ shared/   Pure TypeScript, no DOM. Used by the client now and the server later.
   src/ops.ts        Typed operations
   src/reducer.ts    Pure reducer: applyOp(battle, op) → new battle + inverse + log line
   src/*.test.ts     Vitest suites
-client/   Vite + React + TypeScript, Zustand store, SVG board
-server/   (milestone 4)
+  src/auth.ts       Who may send which operation (ownership, board lock, spectators)
+  src/protocol.ts   Client/server messages; src/schema.ts zod schemas for them
+client/   Vite + React + TypeScript, Zustand store, SVG board, net.ts (room socket)
+server/   Node + Express + ws: app.ts (API + WebSocket), rooms.ts (authority,
+          undo, JSON persistence), dice.ts (RANDOM.ORG pool + fallback)
 ```
 
 ## Architecture
@@ -68,6 +88,22 @@ server/   (milestone 4)
   author, e.g. `Player 1: Militia: 5 wounds → rear-left removed, rear-right 1/4`.
 - **Locks.** Scenario zones and markers are locked: the reducer rejects any
   move, resize or delete of them. Only marker damage and "destroyed" are allowed.
+- **Sync.** The server is authoritative. A client checks an operation locally
+  (permission and reducer), shows it at once, and sends it. The server parses
+  it with zod, checks permission, gives it the next sequence number, applies it
+  with the same reducer, stores it and broadcasts it to everyone (the sender
+  included). Clients keep the server's version plus their own unconfirmed
+  operations and rebuild the view on every echo or rejection. During a move,
+  the preview pose is broadcast as presence (~15 a second, never stored); the
+  committed move is one operation.
+- **Persistence.** One JSON snapshot per room plus an append-only file of the
+  operations since; a fresh snapshot every 50 operations, seats saved at once.
+  On load the operations are replayed through the reducer. Rooms untouched for
+  30 days are deleted. A reconnecting client asks for what it missed since its
+  last sequence number (or gets a full snapshot).
+- **Limits.** Messages over 256 KB close the connection; each connection may
+  send about 40 messages a second (bursts of 80); presence is relayed at most
+  20 times a second.
 
 ### Geometry conventions
 
@@ -209,6 +245,24 @@ settings (⚙ = in the Settings dialog).
     is a target whose every stand centre is inside one such piece. Other
     keywords of crossed terrain are listed in the report.
 
+29. **Seats** belong to a random token kept in the browser's localStorage; the
+    same browser gets its seat back after a refresh or reconnect. The person
+    who created the room is the host and can free a seat (Settings).
+30. **Ownership** (unless ⚙ *Anyone can edit anything*): a player moves and
+    edits only their own regiments and characters, wounds included. Terrain,
+    scenario and objectives are shared until ⚙ *Board locked for the game*
+    (board panel); objective markers can always be damaged and removed. The
+    grid, pinned measurements, tokens, chat and log notes are always shared.
+    Spectators can only chat.
+31. **Undo** (Ctrl+Z) asks the server to apply the inverse of your own last
+    undoable operation. It is refused, with the reason, if a later operation
+    (other than undone ones) touched the same object.
+32. **Dice** are rolled on the server; results are shown sorted (low to high).
+    Only the player who rolled can re-roll, each die once. A roll-off rolls one
+    die per player and re-rolls ties automatically (they are listed). If any
+    die of a roll or re-roll came from the local fallback, the roll is marked
+    *local*. In offline practice the browser rolls (marked local).
+
 ## Using the app
 
 - **Board**: scroll to zoom around the cursor; drag empty space (or hold Space,
@@ -261,6 +315,25 @@ settings (⚙ = in the Settings dialog).
    marker. The proposed pose and the distance the
    front centre travels are previewed; *Apply* (Enter) adds it as a segment.
 
+### Playing online
+
+- **Home page**: *New battle* (pick a scenario and terrain, enter your name)
+  creates a room and takes you to its link `/<CODE>`; *Join* takes a link or
+  the 6-character code.
+- Choose **Player 1** (bottom edge) or **Player 2** (top edge), or watch. The
+  toolbar shows the room code, *Copy link*, your seat, your opponent and how
+  many are watching; the dot is green while connected.
+- You see the others live in their colour: cursor and name, what they have
+  selected, the piece they are moving (outlined where it would go), their
+  ruler, distances, range rings, Align target and line-of-sight lines.
+- If the connection drops, a red banner appears and changes pause; the page
+  reconnects by itself and catches up.
+- **Dice (X)**: number of dice (1–60), optional label and "success on ≤ X".
+  Results reach both players at once, sorted, with the success count, the
+  roller's colour and the source (RANDOM.ORG or local). Tick dice to re-roll
+  them (once each). *Roll-off* gives one die per player, lowest highlighted.
+  The tray keeps the last 20 rolls; every roll is in the log.
+
 ### Facing arcs and line of sight
 
 - Selecting a regiment or character shows its four arcs as faint wedges up to
@@ -293,5 +366,5 @@ settings (⚙ = in the Settings dialog).
 - Touching stands are always highlighted in orange.
 
 - **Shortcuts**: V select, M move, R ruler, D distance, G range rings, L line
-  of sight, A (hold) all arcs, T draw terrain, P pin, F fit, Enter commit, Esc cancel, Backspace drop segment,
+  of sight, A (hold) all arcs, X dice, T draw terrain, P pin, F fit, Enter commit, Esc cancel, Backspace drop segment,
   arrows / Q / E nudge, Delete send to reserve (asks), Ctrl+Z undo, ? help.

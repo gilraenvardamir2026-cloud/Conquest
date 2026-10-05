@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { KEYWORD_INITIALS, STAND_PRESETS, type BattleSettings, type StandType } from '@conquest/shared';
 import { dispatch, useStore } from '../store';
+import { freeSeat } from '../net';
 import { LengthField, NumberField, Row, TextField } from '../ui/fields';
 
 export function SettingsDialog() {
@@ -22,6 +23,8 @@ export function SettingsDialog() {
             <input type="color" value={b.players[seat].color} onChange={(e) => dispatch({ type: 'updatePlayer', seat, patch: { color: e.target.value } })} aria-label="Colour" />
           </Row>
         ))}
+
+        <OnlineSettings />
 
         <h3>Stand presets</h3>
         <p className="muted small">Footprints in inches (type in mm with the unit button; 1" = 25.4 mm). New regiments use these; existing ones keep their size until you change their stand type.</p>
@@ -100,6 +103,50 @@ export function SettingsDialog() {
   );
 }
 
+/** Room-only settings: seats (the host can free one), casual editing, dice status. */
+function OnlineSettings() {
+  const mode = useStore((s) => s.mode);
+  const net = useStore((s) => s.net);
+  const casual = useStore((s) => s.battle.settings.anyoneCanEdit);
+  if (mode !== 'online') return null;
+  const d = net.dice;
+  return (
+    <>
+      <h3>Room {net.room}</h3>
+      {(['p1', 'p2'] as const).map((seat) => {
+        const info = net.seats?.[seat];
+        return (
+          <Row key={seat} label={seat === 'p1' ? 'Player 1 seat' : 'Player 2 seat'}>
+            <span>{info?.taken ? `${info.name}${info.connected ? ' (connected)' : ' (away)'}` : 'free'}</span>
+            {net.isHost && info?.taken && (
+              <button onClick={() => confirm(`Free ${info.name}'s seat? They will become a spectator.`) && freeSeat(seat)}>Free seat</button>
+            )}
+          </Row>
+        );
+      })}
+      <Row label="Anyone can edit anything" title="Casual play: either player can move and edit every piece">
+        <input type="checkbox" checked={!!casual} onChange={(e) => dispatch({ type: 'updateSettings', patch: { anyoneCanEdit: e.target.checked } })} />
+      </Row>
+      <h3>Dice</h3>
+      {d ? (
+        <p className="small">
+          {d.configured ? (
+            <>
+              RANDOM.ORG key set · {d.pool} dice in the pool
+              {d.requestsLeft !== undefined ? ` · today left: ${d.requestsLeft} requests, ${d.bitsLeft} bits` : ''}
+              {d.lastError ? ` · last problem: ${d.lastError} (using the local fallback meanwhile)` : ''}
+            </>
+          ) : (
+            'No RANDOM.ORG key on the server: dice use the local fallback (Node crypto).'
+          )}
+        </p>
+      ) : (
+        <p className="muted small">Dice status unknown.</p>
+      )}
+    </>
+  );
+}
+
 export function HelpOverlay() {
   const close = () => useStore.getState().setShowHelp(false);
   return (
@@ -116,6 +163,7 @@ export function HelpOverlay() {
             <tr><td>Arrow keys · Q / E</td><td>Nudge 0.1" (Shift 1") along its own axes · rotate 1° (Shift 15°)</td></tr>
             <tr><td>Enter · Esc · Backspace</td><td>Commit the move as one log entry · revert it · drop the last segment</td></tr>
             <tr><td>R · D · G</td><td>Ruler (snaps to corners and edge midpoints) · closest distance · range rings</td></tr>
+            <tr><td>X</td><td>Dice tray: roll, re-roll ticked dice once, roll-off</td></tr>
             <tr><td>L</td><td>Line of sight: click the acting regiment, then a target; Sight or Volley mode in the panel</td></tr>
             <tr><td>A (hold)</td><td>Show the facing arcs of every piece (the selected one always shows its arcs)</td></tr>
             <tr><td>P</td><td>Pin the current ruler, distance or rings for both players</td></tr>
@@ -138,7 +186,7 @@ export function HelpOverlay() {
           ))}
         </p>
         <p className="muted small">
-          This is a virtual tabletop, not a rules engine: it moves pieces and measures in inches. Players apply the rules. Warnings never block a move and line of sight is reported, never enforced. Multiplayer and dice arrive in later milestones.
+          This is a virtual tabletop, not a rules engine: it moves pieces and measures in inches. Players apply the rules. Warnings never block a move and line of sight is reported, never enforced.
         </p>
         <div className="btn-row end">
           <button className="primary" onClick={close}>

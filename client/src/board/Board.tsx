@@ -56,6 +56,8 @@ import { sessionPose, useStore, withSession, type Selection } from '../store';
 import { movableFromSelection, refFromSelection } from '../moveActions';
 import { AlignPreview, Ghost, MoveHandles, type HandleKind } from './MoveOverlay';
 import { arcFrames, ArcWedges, LosLines, losBlockerIds } from './LosOverlay';
+import { PeersLayer } from './Peers';
+import { reportCursor } from '../net';
 import { ContactLayer, DistanceLine, PinnedMeasurement, RangeRing, ringRadii, RulerLine } from './Overlays';
 import { BoardLayer, CharacterShape, Defs, FreeMarkerShape, ObjectiveShape, RegimentShape, TerrainShape, Txt, ZoneShape } from './Shapes';
 import { labelSize, poseCentredAt, SELECT_STROKE, seatFacing } from './theme';
@@ -82,6 +84,7 @@ export function Board() {
   const session = useStore((s) => s.moveSession);
   const measure = useStore((s) => s.measure);
   const los = useStore((s) => s.los);
+  const peers = useStore((s) => s.peers);
   const showAllArcs = useStore((s) => s.showAllArcs);
   const { select, setView, setViewport, dispatch, setTool, notify } = useStore.getState();
   const [alignHover, setAlignHover] = useState<{ target: AlignTarget; facing: Facing } | null>(null);
@@ -374,6 +377,7 @@ export function Board() {
   const onPointerMove = (e: RPointerEvent<SVGSVGElement>) => {
     const p = toBoard(e.clientX, e.clientY);
     setPointer(p);
+    reportCursor(p);
     if (hover) setHover({ ...hover, cx: e.clientX, cy: e.clientY });
     if (session?.aligning) setAlignHover(findAlignTarget(p));
     else if (alignHover) setAlignHover(null);
@@ -685,7 +689,10 @@ export function Board() {
         onPointerDown={onBackgroundDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerLeave={() => setPointer(null)}
+        onPointerLeave={() => {
+          setPointer(null);
+          reportCursor(null);
+        }}
         onContextMenu={(e) => tool !== 'select' && e.preventDefault()}
       >
         <Defs />
@@ -773,6 +780,7 @@ export function Board() {
           {measure.pair.length === 2 && (tool === 'distance' || tool === 'select') && <DistanceLine b={eff} a1={measure.pair[0]} a2={measure.pair[1]} fs={fs} flip={flip} px={px} />}
           {measure.ruler && tool === 'ruler' && <RulerLine a={measure.ruler.a} b={measure.ruler.b} fs={fs} flip={flip} px={px} />}
           {losResult && <LosLines result={losResult} px={px} fs={fs} flip={flip} />}
+          <PeersLayer b={eff} peers={peers} fs={fs} flip={flip} px={px} />
           {tool === 'drawTerrain' && draft.length > 0 && (
             <g pointerEvents="none">
               <polyline

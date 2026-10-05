@@ -232,8 +232,13 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
         text: op.patch.name && op.patch.name !== before.name ? `${before.name} is now called ${after.name}` : `updated ${after.name}`,
       };
     }
-    case 'updateSettings':
-      return { battle: { ...b, settings: { ...b.settings, ...op.patch } }, text: `changed settings (${Object.keys(op.patch).join(', ')})` };
+    case 'updateSettings': {
+      const keys = Object.keys(op.patch);
+      let text = `changed settings (${keys.join(', ')})`;
+      if (keys.length === 1 && op.patch.boardLocked !== undefined) text = op.patch.boardLocked ? 'locked the board for the game' : 'unlocked the board';
+      else if (keys.length === 1 && op.patch.anyoneCanEdit !== undefined) text = op.patch.anyoneCanEdit ? 'turned on "anyone can edit anything"' : 'turned off "anyone can edit anything"';
+      return { battle: { ...b, settings: { ...b.settings, ...op.patch } }, text };
+    }
 
     // ----- Terrain ----------------------------------------------------------
     case 'setTerrainLayout': {

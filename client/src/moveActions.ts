@@ -72,20 +72,20 @@ export function pinCurrent() {
   const { ruler, pair, ring } = st.measure;
   const tool = st.tool;
   if ((tool === 'ruler' || (tool !== 'distance' && tool !== 'ring')) && ruler) {
-    st.dispatch({ type: 'addMeasurement', measurement: { id: makeId(), kind: 'ruler', by: st.seat, a: ruler.a, b: ruler.b } });
+    st.dispatch({ type: 'addMeasurement', measurement: { id: makeId(), kind: 'ruler', by: st.seat ?? 'spectator', a: ruler.a, b: ruler.b } });
     st.setMeasure({ ruler: null });
     return;
   }
   if (pair.length === 2 && tool !== 'ring') {
     if (!closestBetween(st.battle, pair[0], pair[1])) return st.notify('Both things must be on the board');
-    st.dispatch({ type: 'addMeasurement', measurement: { id: makeId(), kind: 'distance', by: st.seat, a: pair[0], b: pair[1] } });
+    st.dispatch({ type: 'addMeasurement', measurement: { id: makeId(), kind: 'distance', by: st.seat ?? 'spectator', a: pair[0], b: pair[1] } });
     return;
   }
   if (ring.ref) {
     const radii = ringRadii(st.battle, ring);
     if (!radii.length) return st.notify('Choose a range for the ring first');
     for (const r of radii) {
-      st.dispatch({ type: 'addMeasurement', measurement: { id: makeId(), kind: 'ring', by: st.seat, ref: ring.ref, radius: r.radius, label: `${refName(st.battle, ring.ref)} ${r.label}` } });
+      st.dispatch({ type: 'addMeasurement', measurement: { id: makeId(), kind: 'ring', by: st.seat ?? 'spectator', ref: ring.ref, radius: r.radius, label: `${refName(st.battle, ring.ref)} ${r.label}` } });
     }
     return;
   }

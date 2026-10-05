@@ -96,6 +96,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
   const server = createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_MESSAGE_BYTES });
   const clients = new Set<Client>();
+  let closing = false;
 
   // ---- helpers ------------------------------------------------------------------
   const send = (c: Client, m: ServerMsg) => {
@@ -209,7 +210,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
           // Everyone in the room using this browser token gets the seat (same person, two tabs).
           for (const o of inRoom(room)) if (o.token === c.token) o.seat = m.seat;
           if (room.battle.players[m.seat].name !== name) commit(c, room, room.apply({ type: 'updatePlayer', seat: m.seat, patch: { name } }, m.seat, `seat-${makeId(8)}`));
-          room.snapshotSoon();
+          void room.snapshotNow(); // seats must survive a crash
           for (const o of inRoom(room)) if (o.token === c.token) send(o, { t: 'you', seat: m.seat, isHost: room.hostToken === o.token });
           sendSeats(room);
           return;
@@ -225,7 +226,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
               notice(o, 'The host freed your seat; you are now watching.', 'info');
             }
           }
-          room.snapshotSoon();
+          void room.snapshotNow();
           sendSeats(room);
           return;
         }
@@ -298,7 +299,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
     ws.on('close', () => {
       clients.delete(c);
       const room = c.room;
-      if (!room) return;
+      if (!room || closing) return;
       broadcast(room, { t: 'presence', from: c.id, seat: c.seat ?? 'spectator', name: c.name, p: null });
       sendSeats(room);
       if (!inRoom(room).length) store.unload(room.code);
@@ -323,6 +324,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
   void store.sweep();
 
   const close = async () => {
+    closing = true;
     clearInterval(heartbeat);
     clearInterval(usage);
     clearInterval(sweep);

@@ -14,6 +14,8 @@ export function Toolbar() {
   const players = useStore((s) => s.battle.players);
   const flip = useStore((s) => s.flip);
   const moving = useStore((s) => !!s.moveSession);
+  const mode = useStore((s) => s.mode);
+  const showDice = useStore((s) => s.showDice);
   const st = useStore.getState();
   const fileRef = useRef<HTMLInputElement>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -59,14 +61,18 @@ export function Toolbar() {
           Fit
         </button>
       </div>
-      <div className="tb-group" title="Local play: choose which player you are acting as. Real seats arrive with multiplayer.">
-        <span className="tb-label">Acting as</span>
-        {(['p1', 'p2'] as const).map((s) => (
-          <button key={s} className={`seat ${seat === s ? 'on' : ''}`} style={seat === s ? { background: players[s].color, borderColor: players[s].color } : undefined} aria-pressed={seat === s} onClick={() => st.setSeat(s)}>
-            {players[s].name}
-          </button>
-        ))}
-      </div>
+      {mode === 'local' ? (
+        <div className="tb-group" title="Offline practice: choose which player you are acting as.">
+          <span className="tb-label">Acting as</span>
+          {(['p1', 'p2'] as const).map((s) => (
+            <button key={s} className={`seat ${seat === s ? 'on' : ''}`} style={seat === s ? { background: players[s].color, borderColor: players[s].color } : undefined} aria-pressed={seat === s} onClick={() => st.setSeat(s)}>
+              {players[s].name}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <RoomBadge />
+      )}
       <div className="tb-group">
         <button onClick={() => st.undo()} title="Undo your last operation (Ctrl+Z)">
           Undo
@@ -74,9 +80,11 @@ export function Toolbar() {
         <button onClick={() => downloadJson(`${st.battle.name.replace(/[^\w-]+/g, '_') || 'battle'}.json`, useStore.getState().battle)} title="Save the whole battle as a JSON file">
           Save
         </button>
-        <button onClick={() => fileRef.current?.click()} title="Load a battle JSON file">
-          Load
-        </button>
+        {mode === 'local' && (
+          <button onClick={() => fileRef.current?.click()} title="Load a battle JSON file">
+            Load
+          </button>
+        )}
         <input
           ref={fileRef}
           type="file"
@@ -96,7 +104,10 @@ export function Toolbar() {
             }
           }}
         />
-        <button onClick={() => setNewOpen(true)}>New battle</button>
+        {mode === 'local' ? <button onClick={() => setNewOpen(true)}>New battle</button> : <a className="button-link" href="/">New battle</a>}
+        <button className={showDice ? 'on' : ''} aria-pressed={showDice} onClick={() => st.setShowDice(!showDice)} title="Dice tray (X)">
+          Dice
+        </button>
       </div>
       <div className="tb-group right">
         <button onClick={() => st.setShowSettings(true)}>Settings</button>
@@ -152,6 +163,51 @@ function NewBattleDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Online: room code with copy-link, our seat, connection status. */
+function RoomBadge() {
+  const net = useStore((s) => s.net);
+  const seat = useStore((s) => s.seat);
+  const players = useStore((s) => s.battle.players);
+  const [copied, setCopied] = useState(false);
+  const link = `${location.origin}/${net.room ?? ''}`;
+  const others = net.seats ? (['p1', 'p2'] as const).filter((s) => s !== seat && net.seats![s].taken) : [];
+  return (
+    <div className="tb-group">
+      <span className={`dot ${net.status}`} title={net.status === 'online' ? 'Connected' : net.status === 'connecting' ? 'Connecting…' : 'Disconnected — reconnecting'} />
+      <span className="tb-label">Room</span>
+      <b className="room-code">{net.room}</b>
+      <button
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(link);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } catch {
+            prompt('Copy this link', link);
+          }
+        }}
+        title={link}
+      >
+        {copied ? 'Copied!' : 'Copy link'}
+      </button>
+      {seat ? (
+        <span className="seat-badge" style={{ background: players[seat].color }}>
+          {players[seat].name} ({seat.toUpperCase()})
+        </span>
+      ) : (
+        <span className="seat-badge spectator">Spectator</span>
+      )}
+      {others.map((s) => (
+        <span key={s} className="muted small" title={net.seats![s].connected ? 'connected' : 'away'}>
+          vs {net.seats![s].name}
+          {net.seats![s].connected ? '' : ' (away)'}
+        </span>
+      ))}
+      {net.spectators > 0 && <span className="muted small">· {net.spectators} watching</span>}
     </div>
   );
 }

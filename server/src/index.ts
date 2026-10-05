@@ -16,7 +16,14 @@ const dataDir = process.env.DATA_DIR ?? path.join(root, 'data');
 const key = process.env.RANDOM_ORG_API_KEY?.trim();
 
 const dice = new DiceService({ client: key ? randomOrgClient(key) : null });
-const { server } = await createApp({ dataDir, dice, staticDir: path.join(root, 'client/dist') });
+const { server, close } = await createApp({ dataDir, dice, staticDir: path.join(root, 'client/dist') });
+
+// Save every open room before exiting on a normal stop (Ctrl+C, a host redeploy).
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(sig, () => {
+    void close().finally(() => process.exit(0));
+  });
+}
 
 server.listen(port, () => {
   console.log(`Conquest tabletop server on http://localhost:${port}`);

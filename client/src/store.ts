@@ -1,12 +1,20 @@
 // Single client store (Zustand). Holds the battle document plus local UI state.
 // Every change to the battle goes through dispatch(op), which runs the shared
-// reducer. Until the server arrives (milestone 4) the document is autosaved to
-// localStorage and the "acting seat" is switched by hand.
+// reducer.
+//
+// Two modes:
+//  - local (/local): offline practice, autosaved to localStorage, the "acting
+//    seat" is switched by hand;
+//  - online (/<CODE>): the server is authoritative. `confirmed` is the battle
+//    as the server last told us; `pending` are our operations sent but not yet
+//    echoed. The displayed `battle` is confirmed + pending, applied
+//    optimistically and rebuilt whenever the server speaks.
 //
 // A move session lives here too: segments accumulate locally and the whole
 // move is committed as a single operation.
 
 import { create } from 'zustand';
+import { ROUTE } from './route';
 import {
   applyOp,
   boardCheck,
@@ -18,8 +26,14 @@ import {
   pieceAt,
   type AlignMode,
   type AlignTarget,
+  authorize,
   type Battle,
   type BoardWarning,
+  type ClientMsg,
+  type DiceStatus,
+  type Presence,
+  type SeatsInfo,
+  type ServerMsg,
   type EntityRef,
   type LosMode,
   type LosParty,
@@ -114,9 +128,36 @@ interface HistoryEntry {
   touched: string[];
 }
 
+export interface NetState {
+  status: 'connecting' | 'online' | 'offline';
+  room: string | null;
+  clientId: string | null;
+  isHost: boolean;
+  seats: SeatsInfo | null;
+  spectators: number;
+  dice: DiceStatus | null;
+  /** True once the first welcome arrived (the board is real). */
+  ready: boolean;
+}
+
+/** Another person in the room, with what they are doing right now. */
+export interface Peer {
+  seat: PlayerSeat | 'spectator';
+  name: string;
+  p: Presence;
+  at: number;
+}
+
 export interface AppState {
+  mode: 'local' | 'online';
   battle: Battle;
-  seat: PlayerSeat;
+  /** Online: our seat (null = spectator). Local: the seat we act as. */
+  seat: PlayerSeat | null;
+  net: NetState;
+  confirmed: Battle | null;
+  pending: { id: string; op: Op }[];
+  peers: Record<string, Peer>;
+  showDice: boolean;
   selection: Selection | null;
   tool: Tool;
   view: View;
@@ -168,6 +209,33 @@ export interface AppState {
   setRing: (r: Partial<RingOptions>) => void;
   setLos: (l: Partial<LosState>) => void;
   setShowAllArcs: (v: boolean) => void;
+  setShowDice: (v: boolean) => void;
+  /** Handle a message from the server (online mode). */
+  receive: (m: ServerMsg) => void;
+  setNet: (n: Partial<NetState>) => void;
+}
+
+/** Set by the connection module: send a message, or reconnect for a full snapshot. */
+let sender: ((m: ClientMsg) => boolean) | null = null;
+let resyncer: (() => void) | null = null;
+export const setSender = (f: ((m: ClientMsg) => boolean) | null, resync: (() => void) | null = null) => {
+  sender = f;
+  resyncer = resync;
+};
+export const sendToServer = (m: ClientMsg): boolean => (sender ? sender(m) : false);
+
+/** Apply ops one by one, skipping (and reporting) any the reducer now rejects. */
+function rebase(base: Battle, pending: { id: string; op: Op }[], seat: PlayerSeat | null): { battle: Battle; kept: { id: string; op: Op }[] } {
+  let b = base;
+  const kept: { id: string; op: Op }[] = [];
+  for (const p of pending) {
+    const r = applyOp(b, { id: p.id, by: seat ?? 'spectator', at: Date.now(), op: p.op });
+    if (r.ok) {
+      b = r.battle;
+      kept.push(p);
+    }
+  }
+  return { battle: b, kept };
 }
 
 const STORAGE_KEY = 'conquest.local.battle.v1';
@@ -183,7 +251,8 @@ function loadSaved(): Battle | null {
   }
 }
 
-const initialBattle = (): Battle => loadSaved() ?? createBattle({ id: makeId(), scenarioId: 's1', layoutId: 'layout1' });
+const initialBattle = (): Battle =>
+  ROUTE.page === 'room' ? createBattle({ id: ROUTE.code }) : loadSaved() ?? createBattle({ id: makeId(), scenarioId: 's1', layoutId: 'layout1' });
 
 function fitView(b: Battle, vw: number, vh: number): View {
   // Board plus the reinforcement strips (2" each side) and a small margin.
@@ -194,8 +263,14 @@ function fitView(b: Battle, vw: number, vh: number): View {
 }
 
 export const useStore = create<AppState>((set, get) => ({
+  mode: ROUTE.page === 'room' ? 'online' : 'local',
   battle: initialBattle(),
-  seat: 'p1',
+  seat: ROUTE.page === 'room' ? null : 'p1',
+  net: { status: 'connecting', room: ROUTE.page === 'room' ? ROUTE.code : null, clientId: null, isHost: false, seats: null, spectators: 0, dice: null, ready: false },
+  confirmed: null,
+  pending: [],
+  peers: {},
+  showDice: false,
   selection: null,
   tool: 'select',
   view: { cx: 36, cy: 24, scale: 12 },
@@ -213,11 +288,17 @@ export const useStore = create<AppState>((set, get) => ({
   los: { acting: null, target: null, mode: 'sight', allLines: false },
   showAllArcs: false,
 
-  dispatch: (op) => commit(op, true) !== null,
+  dispatch: (op) => (get().mode === 'online' ? sendOp(op) : commit(op, true) !== null),
 
   undo: () => {
+    if (get().mode === 'online') {
+      if (get().net.status !== 'online') return get().notify('Disconnected — reconnecting', 'error');
+      if (!get().seat) return get().notify('Spectators cannot undo', 'error');
+      sendToServer({ t: 'undo' });
+      return;
+    }
     const { undoStack, seat, history } = get();
-    const i = undoStack.map((u) => u.by).lastIndexOf(seat);
+    const i = undoStack.map((u) => u.by).lastIndexOf(seat ?? 'p1');
     if (i < 0) {
       get().notify('Nothing to undo');
       return;
@@ -284,6 +365,11 @@ export const useStore = create<AppState>((set, get) => ({
       get().notify('Only pieces on the board can move');
       return false;
     }
+    if (get().mode === 'online') {
+      const seat = get().seat;
+      if (!seat) return get().notify('Spectators cannot move pieces', 'error'), false;
+      if (p.owner !== seat && !b.settings.anyoneCanEdit) return get().notify(`${p.name} belongs to the other player`, 'error'), false;
+    }
     const start = { x: p.x!, y: p.y!, angle: p.angle ?? 0 };
     set({ moveSession: { piece, start, segments: [], live: null, aligning: false, align: null }, selection: { kind: piece.kind, id: piece.id } });
     return true;
@@ -319,11 +405,116 @@ export const useStore = create<AppState>((set, get) => ({
   setRing: (r) => set((s) => ({ measure: { ...s.measure, ring: { ...s.measure.ring, ...r } } })),
   setLos: (l) => set((s) => ({ los: { ...s.los, ...l } })),
   setShowAllArcs: (showAllArcs) => set({ showAllArcs }),
+  setShowDice: (showDice) => set({ showDice }),
+  setNet: (n) => set((s) => ({ net: { ...s.net, ...n } })),
+
+  receive: (m) => {
+    const s = get();
+    switch (m.t) {
+      case 'welcome': {
+        let confirmed = m.battle ? normalizeBattle(m.battle) : s.confirmed;
+        if (!confirmed) return; // ops without a base: cannot happen (we only send lastSeq once we have a battle)
+        for (const env of m.ops ?? []) {
+          const r = applyOp(confirmed, env);
+          if (r.ok) confirmed = r.battle;
+        }
+        // Anything we sent that the server has now applied is no longer pending; resend the rest.
+        const seen = new Set((m.ops ?? []).map((e) => e.id));
+        const pending = s.pending.filter((p) => !seen.has(p.id));
+        const { battle, kept } = rebase(confirmed, pending, m.seat);
+        const first = !s.net.ready;
+        set({
+          confirmed,
+          battle,
+          pending: kept,
+          seat: m.seat,
+          peers: {},
+          net: { ...s.net, status: 'online', clientId: m.clientId, isHost: m.isHost, seats: m.seats, spectators: m.spectators, dice: m.dice, ready: true },
+        });
+        for (const p of kept) sendToServer({ t: 'op', id: p.id, op: p.op });
+        if (first) get().zoomToFit();
+        return;
+      }
+      case 'op': {
+        if (!s.confirmed) return;
+        const r = applyOp(s.confirmed, m.env);
+        if (!r.ok) {
+          // Should never happen: the server applied it. Resynchronise from scratch.
+          console.warn('Could not apply a server operation; resynchronising', r.error);
+          set({ confirmed: null });
+          resyncer?.();
+          return;
+        }
+        const pending = s.pending.filter((p) => p.id !== m.env.id);
+        const { battle, kept } = rebase(r.battle, pending, s.seat);
+        set({ confirmed: r.battle, battle, pending: kept });
+        return;
+      }
+      case 'reject': {
+        const pending = s.pending.filter((p) => p.id !== m.id);
+        if (s.confirmed) {
+          const { battle, kept } = rebase(s.confirmed, pending, s.seat);
+          set({ battle, pending: kept });
+        } else set({ pending });
+        get().notify(m.error, 'error');
+        return;
+      }
+      case 'you':
+        set({ seat: m.seat, net: { ...s.net, isHost: m.isHost } });
+        return;
+      case 'seats':
+        set({ net: { ...s.net, seats: m.seats, spectators: m.spectators } });
+        return;
+      case 'presence': {
+        const peers = { ...s.peers };
+        if (m.p) peers[m.from] = { seat: m.seat, name: m.name, p: { ...(peers[m.from]?.p ?? {}), ...m.p }, at: Date.now() };
+        else delete peers[m.from];
+        set({ peers });
+        return;
+      }
+      case 'dice':
+        set({ net: { ...s.net, dice: m.dice } });
+        return;
+      case 'notice':
+        get().notify(m.text, m.kind ?? 'error');
+        return;
+      case 'pong':
+        return;
+    }
+  },
 }));
+
+/**
+ * Online: check the op locally (permission, reducer), show it at once, and
+ * send it. The server's echo (or rejection) reconciles.
+ */
+function sendOp(op: Op): boolean {
+  const st = useStore.getState();
+  if (st.net.status !== 'online' || !st.confirmed) {
+    st.notify('Disconnected — reconnecting. Changes are paused.', 'error');
+    return false;
+  }
+  const actor = st.seat ?? 'spectator';
+  const why = authorize(st.battle, actor, op);
+  if (why) {
+    st.notify(why, 'error');
+    return false;
+  }
+  const id = makeId(16);
+  const r = applyOp(st.battle, { id, by: actor, at: Date.now(), op });
+  if (!r.ok) {
+    st.notify(r.error, 'error');
+    return false;
+  }
+  useStore.setState({ battle: r.battle, pending: [...st.pending, { id, op }] });
+  sendToServer({ t: 'op', id, op });
+  return true;
+}
 
 /** Run an op through the reducer; record its inverse for undo unless it is itself an undo. */
 function commit(op: Op, recordUndo: boolean): number | null {
-  const { battle, seat } = useStore.getState();
+  const { battle } = useStore.getState();
+  const seat = useStore.getState().seat ?? 'p1';
   const env: OpEnvelope = { id: makeId(), by: seat, at: Date.now(), op };
   const r = applyOp(battle, env);
   if (!r.ok) {
@@ -358,6 +549,7 @@ useStore.subscribe((s, prev) => {
   if (s.checkResult && (s.battle.terrain !== prev.battle.terrain || s.battle.zones !== prev.battle.zones)) {
     s.setCheckResult(boardCheck(s.battle));
   }
+  if (s.mode !== 'local') return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {

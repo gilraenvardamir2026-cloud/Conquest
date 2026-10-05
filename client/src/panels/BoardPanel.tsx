@@ -145,6 +145,10 @@ export function BoardPanel() {
           </select>
           <button onClick={addPreset}>Add piece</button>
         </div>
+        <label className="kw" title="Once the board is set: terrain, zones and markers can no longer be edited (markers can still be damaged)">
+          <input type="checkbox" checked={!!b.settings.boardLocked} onChange={(e) => dispatch({ type: 'updateSettings', patch: { boardLocked: e.target.checked } })} />
+          <b>Board locked for the game</b>
+        </label>
         <div className="btn-row">
           <button onClick={() => useStore.getState().setTool('drawTerrain')}>Draw polygon</button>
           <button disabled={!b.terrain.length} onClick={() => setAllLocked(!allLocked)}>

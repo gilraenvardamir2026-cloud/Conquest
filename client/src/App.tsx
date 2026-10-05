@@ -5,12 +5,15 @@ import { Inspector } from './panels/Inspector';
 import { LogPanel } from './panels/LogPanel';
 import { Roster } from './panels/Roster';
 import { Toolbar } from './panels/Toolbar';
+import { DiceTray } from './panels/DiceTray';
+import { RoomOverlays } from './panels/RoomOverlays';
 import { useStore } from './store';
 import { applyAlign, movableFromSelection, nudge, pinCurrent, refFromSelection, startLos, startMoveForSelection } from './moveActions';
 
 export function App() {
   const showHelp = useStore((s) => s.showHelp);
   const showSettings = useStore((s) => s.showSettings);
+  const showDice = useStore((s) => s.showDice);
 
   // Global shortcuts (ignored while typing in a field).
   useEffect(() => {
@@ -67,6 +70,7 @@ export function App() {
       else if (e.key === 'r' || e.key === 'R') st.setTool('ruler');
       else if (e.key === 'd' || e.key === 'D') st.setTool('distance');
       else if (e.key === 'l' || e.key === 'L') startLos();
+      else if (e.key === 'x' || e.key === 'X') st.setShowDice(!st.showDice);
       else if (e.key === 'g' || e.key === 'G') {
         st.setTool('ring');
         const ref = refFromSelection(st.selection);
@@ -107,6 +111,8 @@ export function App() {
       <footer className="app-log">
         <LogPanel />
       </footer>
+      {showDice && <DiceTray />}
+      <RoomOverlays />
       {showHelp && <HelpOverlay />}
       {showSettings && <SettingsDialog />}
       <Toast />
