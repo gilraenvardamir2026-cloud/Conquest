@@ -73,7 +73,7 @@ export function SettingsDialog() {
           </select>
         </Row>
 
-        <h3>Line of sight (used from milestone 3)</h3>
+        <h3>Line of sight</h3>
         <Row label="Obstructing terrain">
           <select value={s.losObstructing} onChange={(e) => set({ losObstructing: e.target.value as BattleSettings['losObstructing'] })}>
             <option value="tournament">blocks every line (tournament pack)</option>
@@ -116,6 +116,8 @@ export function HelpOverlay() {
             <tr><td>Arrow keys · Q / E</td><td>Nudge 0.1" (Shift 1") along its own axes · rotate 1° (Shift 15°)</td></tr>
             <tr><td>Enter · Esc · Backspace</td><td>Commit the move as one log entry · revert it · drop the last segment</td></tr>
             <tr><td>R · D · G</td><td>Ruler (snaps to corners and edge midpoints) · closest distance · range rings</td></tr>
+            <tr><td>L</td><td>Line of sight: click the acting regiment, then a target; Sight or Volley mode in the panel</td></tr>
+            <tr><td>A (hold)</td><td>Show the facing arcs of every piece (the selected one always shows its arcs)</td></tr>
             <tr><td>P</td><td>Pin the current ruler, distance or rings for both players</td></tr>
             <tr><td>Drag a character onto a friendly regiment</td><td>Join it</td></tr>
             <tr><td>Drag a reserve row onto the board</td><td>Deploy it there</td></tr>
@@ -136,7 +138,7 @@ export function HelpOverlay() {
           ))}
         </p>
         <p className="muted small">
-          This is a virtual tabletop, not a rules engine: it moves pieces and measures in inches. Players apply the rules. Warnings never block a move. Line of sight, multiplayer and dice arrive in later milestones.
+          This is a virtual tabletop, not a rules engine: it moves pieces and measures in inches. Players apply the rules. Warnings never block a move and line of sight is reported, never enforced. Multiplayer and dice arrive in later milestones.
         </p>
         <div className="btn-row end">
           <button className="primary" onClick={close}>

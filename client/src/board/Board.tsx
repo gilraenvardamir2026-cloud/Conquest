@@ -20,6 +20,8 @@ import {
   localToWorld,
   makeId,
   moveWarnings,
+  lineOfSight,
+  regimentFrame,
   nearestAlignTarget,
   normAngle,
   pieceAt,
@@ -32,6 +34,7 @@ import {
   objectiveMarkerPolygon,
   type AlignTarget,
   type Facing,
+  type Frame,
   type MovingPiece,
   type Pose,
   occupiedZoneIds,
@@ -52,6 +55,7 @@ import {
 import { sessionPose, useStore, withSession, type Selection } from '../store';
 import { movableFromSelection, refFromSelection } from '../moveActions';
 import { AlignPreview, Ghost, MoveHandles, type HandleKind } from './MoveOverlay';
+import { arcFrames, ArcWedges, LosLines, losBlockerIds } from './LosOverlay';
 import { ContactLayer, DistanceLine, PinnedMeasurement, RangeRing, ringRadii, RulerLine } from './Overlays';
 import { BoardLayer, CharacterShape, Defs, FreeMarkerShape, ObjectiveShape, RegimentShape, TerrainShape, Txt, ZoneShape } from './Shapes';
 import { labelSize, poseCentredAt, SELECT_STROKE, seatFacing } from './theme';
@@ -77,6 +81,8 @@ export function Board() {
   const selection = useStore((s) => s.selection);
   const session = useStore((s) => s.moveSession);
   const measure = useStore((s) => s.measure);
+  const los = useStore((s) => s.los);
+  const showAllArcs = useStore((s) => s.showAllArcs);
   const { select, setView, setViewport, dispatch, setTool, notify } = useStore.getState();
   const [alignHover, setAlignHover] = useState<{ target: AlignTarget; facing: Facing } | null>(null);
 
@@ -145,6 +151,7 @@ export function Board() {
         space.current = true;
         e.preventDefault();
       }
+      if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.repeat) useStore.getState().setShowAllArcs(true);
       if (tool === 'drawTerrain') {
         if (e.key === 'Enter') finishDraft();
         if (e.key === 'Escape') {
@@ -156,12 +163,16 @@ export function Board() {
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === 'Space') space.current = false;
+      if (e.key === 'a' || e.key === 'A') useStore.getState().setShowAllArcs(false);
     };
+    const blur = () => useStore.getState().setShowAllArcs(false);
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', blur);
     };
   });
 
@@ -196,8 +207,15 @@ export function Board() {
     () => (session ? moveWarnings(battle, session.piece, sessionPose(session), [...session.segments, ...(session.live ? [session.live] : [])]) : []),
     [battle, session],
   );
+  const losResult = useMemo(
+    () => (tool === 'los' && los.acting && los.target ? lineOfSight(eff, los.acting, los.target, los.mode, { allLines: los.allLines }) : null),
+    [eff, tool, los],
+  );
   const highlight = useStore((s) => s.highlight);
-  const warnIds = useMemo(() => new Set([...highlight, ...moveWarns.flatMap((w) => w.ids)]), [highlight, moveWarns]);
+  const warnIds = useMemo(() => new Set([...highlight, ...moveWarns.flatMap((w) => w.ids), ...losBlockerIds(losResult)]), [highlight, moveWarns, losResult]);
+  // Facing arcs: of the LoS acting piece, else of the selected regiment / character, or of everything while A is held.
+  const arcIds = tool === 'los' ? (los.acting && los.acting.kind !== 'objective' ? [los.acting.id] : []) : selection && (selection.kind === 'regiment' || selection.kind === 'character') ? [selection.id] : [];
+  const frames = arcFrames(eff, arcIds, showAllArcs, pieceFrame);
   const snapPoints = useMemo(() => (tool === 'ruler' ? collectSnapPoints(eff) : []), [eff, tool]);
   const px = 1 / view.scale; // one screen pixel in inches
   const snap = (p: Vec): Vec => {
@@ -255,6 +273,18 @@ export function Board() {
       e.stopPropagation();
       const pair = [...measure.pair, ref].slice(-2);
       useStore.getState().setMeasure({ pair });
+      return;
+    }
+    if (tool === 'los') {
+      if (sel.kind !== 'regiment' && sel.kind !== 'character' && sel.kind !== 'objective') return;
+      e.stopPropagation();
+      const party = { kind: sel.kind, id: sel.id };
+      const st = useStore.getState();
+      // First click (or Shift-click) picks the acting piece; the next click picks the target.
+      if (!los.acting || e.shiftKey) {
+        if (sel.kind === 'objective') return notify('Objective markers cannot act; pick a regiment or character first');
+        st.setLos({ acting: party, target: los.target?.id === sel.id ? null : los.target });
+      } else if (sel.id !== los.acting.id) st.setLos({ target: party });
       return;
     }
     if (tool === 'ring') {
@@ -316,7 +346,7 @@ export function Board() {
       setDrag({ type: 'ruler' });
       return;
     }
-    if (e.button === 1 || space.current || (e.button === 0 && (tool === 'select' || tool === 'distance' || tool === 'ring'))) {
+    if (e.button === 1 || space.current || (e.button === 0 && (tool === 'select' || tool === 'distance' || tool === 'ring' || tool === 'los'))) {
       capture(e);
       setDrag({ type: 'pan', sx: e.clientX, sy: e.clientY, cx: view.cx, cy: view.cy, moved: false });
       return;
@@ -685,6 +715,9 @@ export function Board() {
             const sel = { kind: 'marker' as const, id: m.id };
             return <FreeMarkerShape key={m.id} m={m} fs={fs} flip={flip} selected={isSel('marker', m.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} />;
           })}
+          {frames.map((f, i) => (
+            <ArcWedges key={i} frame={f} board={battle.board} fs={fs} flip={flip} px={px} labels={frames.length === 1} />
+          ))}
           {session && moving && <Ghost pose={session.start} box={moving.box} />}
           {eff.regiments
             .filter((r) => r.location === 'board' && !r.garrisonId)
@@ -738,6 +771,7 @@ export function Board() {
           ))}
           {measure.pair.length === 2 && (tool === 'distance' || tool === 'select') && <DistanceLine b={eff} a1={measure.pair[0]} a2={measure.pair[1]} fs={fs} flip={flip} px={px} />}
           {measure.ruler && tool === 'ruler' && <RulerLine a={measure.ruler.a} b={measure.ruler.b} fs={fs} flip={flip} px={px} />}
+          {losResult && <LosLines result={losResult} px={px} fs={fs} flip={flip} />}
           {tool === 'drawTerrain' && draft.length > 0 && (
             <g pointerEvents="none">
               <polyline
@@ -763,6 +797,9 @@ export function Board() {
       {session?.aligning && <div className="board-hint">Click a side of an enemy regiment (front, flank, rear) or of an objective marker · Esc cancels</div>}
       {!session?.aligning && tool === 'ruler' && <div className="board-hint">Drag to measure · snaps to stand corners and edge midpoints (Alt: no snap) · P pins</div>}
       {!session?.aligning && tool === 'distance' && <div className="board-hint">Click two things to see their closest distance · P pins</div>}
+      {!session?.aligning && tool === 'los' && (
+        <div className="board-hint">{!los.acting ? 'Click the acting regiment' : 'Click a target (regiment, character or objective marker) · Shift-click picks a new acting regiment'}</div>
+      )}
       {!session?.aligning && tool === 'ring' && <div className="board-hint">Click a regiment or character (Alt-click a single stand) · choose ranges in the panel · P pins</div>}
       {pointer && (
         <div className="coords">
@@ -771,6 +808,15 @@ export function Board() {
       )}
     </div>
   );
+}
+
+/** Facing frame of a regiment or lone character on the board. */
+function pieceFrame(b: Battle, id: string): Frame | null {
+  const r = b.regiments.find((x) => x.id === id);
+  if (r) return r.location === 'board' && !r.garrisonId ? regimentFrame(r) : null;
+  const c = b.characters.find((x) => x.id === id);
+  if (c && c.location === 'board' && !c.attachedTo && c.x !== undefined) return { x: c.x, y: c.y ?? 0, angle: c.angle ?? 0, w: c.standW, d: c.standD };
+  return null;
 }
 
 /** Current pose of a regiment or lone character on the board. */

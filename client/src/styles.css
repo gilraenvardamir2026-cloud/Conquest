@@ -95,6 +95,15 @@ button.primary {
   border-color: var(--accent);
   color: #fff;
 }
+button.on:hover:not(:disabled),
+button[aria-pressed='true']:hover:not(:disabled),
+button.primary:hover:not(:disabled) {
+  background: #24496d;
+  border-color: #24496d;
+}
+button.primary.danger:hover:not(:disabled) {
+  background: #7d1d14;
+}
 button.danger {
   color: var(--danger);
   border-color: #d8a49c;
@@ -715,4 +724,70 @@ button.unit {
 }
 .grow {
   flex: 1;
+}
+
+/* Line of sight */
+.los-party {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin: 3px 0;
+}
+.headline {
+  font-weight: 700;
+  font-size: 14px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+.headline.yes {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+.headline.no {
+  background: #fdecea;
+  color: #8e1b10;
+}
+.los-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 6px 0;
+}
+.los-table th,
+.los-table td {
+  text-align: left;
+  padding: 2px 3px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.los-table tr.clear td:nth-child(3) {
+  color: #1b5e20;
+  font-weight: 600;
+}
+.los-table tr.blocked td:nth-child(3) {
+  color: #8e1b10;
+  font-weight: 600;
+}
+.note {
+  margin: 2px 0;
+}
+.legend .sw {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  vertical-align: middle;
+  margin: 0 3px 0 8px;
+}
+.legend .sw.clear {
+  background: #2e7d32;
+}
+.legend .sw.blocked {
+  background: #c62828;
+}
+.legend .sw.range {
+  background: #9e9e9e;
+}
+.legend .sw.arc {
+  background: repeating-linear-gradient(90deg, #bdbdbd 0 2px, transparent 2px 4px);
 }

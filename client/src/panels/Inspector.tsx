@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   allocateWounds,
+  effectiveSize,
   engagedStandIds,
   nextWoundTarget,
   presetFor,
@@ -36,6 +37,7 @@ import { BoardPanel } from './BoardPanel';
 import { StandGrid } from './StandGrid';
 import { MeasurePanel } from './MeasurePanel';
 import { MovePanel } from './MovePanel';
+import { LosPanel } from './LosPanel';
 
 export function Inspector() {
   const battle = useStore((s) => s.battle);
@@ -44,6 +46,7 @@ export function Inspector() {
   const tool = useStore((s) => s.tool);
   if (moving) return <MovePanel />;
   if (tool === 'ruler' || tool === 'distance' || tool === 'ring') return <MeasurePanel />;
+  if (tool === 'los') return <LosPanel />;
   if (!selection) return <BoardPanel />;
   const close = (
     <button className="icon" title="Close (Esc)" onClick={() => useStore.getState().select(null)}>
@@ -126,6 +129,7 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
   const commandLost = !r.stands.some((s) => s.isCommand) && r.casualties.some((s) => s.isCommand);
   const pending = r.stands.filter((s) => s.wounds >= s.woundsMax);
   const woundsMax = r.stands[0]?.woundsMax ?? r.casualties[0]?.woundsMax ?? 1;
+  const eff = effectiveSize(b, { kind: 'regiment', id: r.id });
   const upd = (patch: RegimentPatch) => dispatch({ type: 'updateRegiment', id: r.id, patch });
 
   const setType = (t: StandType) => {
@@ -281,10 +285,25 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
         <Row label="Wounds / stand">
           <NumberField value={woundsMax} digits={0} step={1} min={1} max={99} width={52} onCommit={(n) => n && dispatch({ type: 'setWoundsPerStand', id: r.id, woundsMax: n })} />
         </Row>
-        <Row label="LoS size" title="From the stand type; set an override for e.g. a regiment on a hill">
-          <span className="muted">{r.size}</span>
+        <Row label="LoS size" title="From the stand type, plus an Elevated piece under every stand; an override replaces both">
+          <span title={eff?.note}>
+            <b>{eff?.size ?? r.size}</b> <span className="muted small">{eff?.note}</span>
+          </span>
+        </Row>
+        <Row label="Size override">
           <NumberField value={r.sizeOverride} allowEmpty digits={0} step={1} min={0} max={10} width={52} onCommit={(n) => upd({ sizeOverride: n ?? null })} />
-          <span className="muted small">override</span>
+        </Row>
+        <Row label="All arcs are front" title="Line of sight and arc report treat every arc of this regiment as its front (setting)">
+          <input
+            type="checkbox"
+            checked={b.settings.losAllFrontIds.includes(r.id)}
+            onChange={(e) =>
+              dispatch({
+                type: 'updateSettings',
+                patch: { losAllFrontIds: e.target.checked ? [...b.settings.losAllFrontIds, r.id] : b.settings.losAllFrontIds.filter((x) => x !== r.id) },
+              })
+            }
+          />
         </Row>
         <Row label="March">
           <NumberField value={r.march} allowEmpty digits={1} min={0} width={52} suffix='"' onCommit={(n) => upd({ march: n ?? null })} />

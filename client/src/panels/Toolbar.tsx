@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { SAMPLE_LAYOUTS, SCENARIOS, type Battle } from '@conquest/shared';
 import { useStore, type Tool } from '../store';
 import { downloadJson } from './actions';
-import { startMoveForSelection } from '../moveActions';
+import { startLos, startMoveForSelection } from '../moveActions';
 
 export function Toolbar() {
   const tool = useStore((s) => s.tool);
@@ -35,6 +35,9 @@ export function Toolbar() {
         {toolBtn('ruler', 'Ruler', 'R')}
         {toolBtn('distance', 'Distance', 'D')}
         {toolBtn('ring', 'Range ring', 'G')}
+        <button className={`tool ${tool === 'los' ? 'on' : ''}`} aria-pressed={tool === 'los'} title="Line of sight and arcs (L)" onClick={() => startLos()}>
+          LoS
+        </button>
         {toolBtn('drawTerrain', 'Draw terrain', 'T')}
         {toolBtn('placeZone', 'Place zone', '—', !custom, custom ? 'Place an objective zone' : 'Custom board only (scenario objectives are locked)')}
         {toolBtn('placeObjective', 'Place marker', '—', !custom, custom ? 'Place an objective marker' : 'Custom board only (scenario objectives are locked)')}

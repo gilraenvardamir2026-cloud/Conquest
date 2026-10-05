@@ -7,15 +7,15 @@ exactly as with miniatures and a tape measure.
 
 ## Status
 
-The project is built in five milestones. **Milestones 1 and 2 are
-complete**: single-player, local only.
+The project is built in five milestones. **Milestones 1–3 are complete**:
+single-player, local only.
 
 | # | Milestone | State |
 |---|-----------|-------|
 | 1 | Foundations: shared types, reducer, geometry + tests, board, scenarios, terrain, regiments, characters, wounds, objective markers | done |
 | 2 | Movement and measuring (move sessions, handles, ruler, distances, range rings, contact, Align to target) | done |
-| 3 | Facing arcs and line of sight | next |
-| 4 | Multiplayer (server, rooms, seats, presence, persistence) and RANDOM.ORG dice | — |
+| 3 | Facing arcs and line of sight | done |
+| 4 | Multiplayer (server, rooms, seats, presence, persistence) and RANDOM.ORG dice | next |
 | 5 | Polish, roster import/export, accessibility pass, Dockerfile, deploy guide | — |
 
 ## Run locally
@@ -44,7 +44,8 @@ shared/   Pure TypeScript, no DOM. Used by the client now and the server later.
   src/regiment.ts   Formation layout, derived stand geometry, wound allocation
   src/board.ts      Terrain/marker footprints, zone occupancy, board check, createBattle
   src/movement.ts   Move segments (forward, sideways, wheel, rotate, free, align), contact
-  src/measure.ts    Closest distance between things, board contacts, move warnings
+  src/measure.ts    Closest distance between things, board contacts, move warnings, align targets
+  src/los.ts        Effective sizes, arc report, line-of-sight checker (Sight and Volley)
   src/ops.ts        Typed operations
   src/reducer.ts    Pure reducer: applyOp(battle, op) → new battle + inverse + log line
   src/*.test.ts     Vitest suites
@@ -175,6 +176,39 @@ settings (⚙ = in the Settings dialog).
     corners and merge them, which is exactly the set of points within that
     range of the footprint. A regiment with gaps gets the exact merged shape.
 
+21. **Facing arcs** use the regiment's full bounding rectangle; each corner
+    sends a 45° line outward. A point on a dividing line is in both arcs, and a
+    stand is in an arc if any part of it is inside the wedge.
+22. **Effective size** = stand-type size, plus the Size of an Elevated piece
+    when *every* stand centre is inside it. A manual override replaces both. A
+    regiment in garrison uses the terrain's Size. Objective markers are Size 2.
+    Traversable terrain adds nothing.
+23. **Line of sight is restricted to the acting front arc**: a line whose
+    target point is outside the acting piece's front arc is reported as "not in
+    front arc" (dotted grey) and does not count. A regiment in garrison sees
+    360°, and the per-regiment setting *All arcs are front* (regiment
+    inspector) lifts the restriction for that regiment, also reporting its arcs
+    as front when it is the target.
+24. **"On" an Obstructing piece** (so it is ignored for that line) means the
+    acting or target stand's centre is inside it.
+25. **Obstacle size test**: other stands and objective markers block when their
+    effective size is ≥ the acting size and ≥ the target size (⚙ or ≥ the acting
+    size only). Obstructing / Garrison terrain blocks every line in tournament
+    mode (⚙ default) or, in core mode, only with Size ≥ those sizes.
+26. **Corridor**: each line is a 0.04" (1 mm) wide strip; it is obstructed when
+    the strip reaches more than 0.001" into an obstacle's interior, so a line
+    grazing a corner does not count.
+27. **Sight mode** tests lines from the centre of each front-rank stand's front
+    edge to the centre of each edge of every target stand. **Volley mode** tests
+    the same origins against every target corner, points every 0.25" (⚙) along
+    each edge, and the closest point of each edge, keeping the shortest clear
+    line; *effective range* is the closest stand-to-target distance under half
+    the Barrage range. A garrison draws lines from points every 0.5" around the
+    terrain's edge and gives one row.
+28. **Cover and Obscuring** crossed are flagged without changing the result, as
+    is a target whose every stand centre is inside one such piece. Other
+    keywords of crossed terrain are listed in the report.
+
 ## Using the app
 
 - **Board**: scroll to zoom around the cursor; drag empty space (or hold Space,
@@ -227,6 +261,22 @@ settings (⚙ = in the Settings dialog).
    marker. The proposed pose and the distance the
    front centre travels are previewed; *Apply* (Enter) adds it as a segment.
 
+### Facing arcs and line of sight
+
+- Selecting a regiment or character shows its four arcs as faint wedges up to
+  the board edge; hold **A** to see every piece's arcs.
+- **LoS (L)**: click the acting regiment (or press L with it selected), then a
+  target regiment, character or objective marker. Shift-click picks a new
+  acting regiment. Choose **Sight** (charges and general LoS) or **Volley**.
+- Every tested line is drawn: green clear, red obstructed (the blocker is
+  outlined), grey out of range, dotted grey outside the front arc. The panel
+  shows the headline (e.g. "Line of sight: YES — 2 of 3 front stands clear"),
+  both effective sizes and why, the arc counts ("Front: 2 · Left flank: 1"),
+  whether the target is in the acting front arc, and a row per acting stand:
+  arcs, clear or blocked by what, distance, Barrage range, effective range and
+  terrain crossed. **Post to log** records it.
+- The checker never enforces anything; LoS settings are in ⚙ Settings.
+
 ### Measuring
 
 - **Ruler (R)**: drag from point to point. It snaps to stand corners and edge
@@ -241,6 +291,6 @@ settings (⚙ = in the Settings dialog).
   the list in the right panel.
 - Touching stands are always highlighted in orange.
 
-- **Shortcuts**: V select, M move, R ruler, D distance, G range rings, T draw
-  terrain, P pin, F fit, Enter commit, Esc cancel, Backspace drop segment,
+- **Shortcuts**: V select, M move, R ruler, D distance, G range rings, L line
+  of sight, A (hold) all arcs, T draw terrain, P pin, F fit, Enter commit, Esc cancel, Backspace drop segment,
   arrows / Q / E nudge, Delete send to reserve (asks), Ctrl+Z undo, ? help.

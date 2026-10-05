@@ -6,7 +6,7 @@ import { LogPanel } from './panels/LogPanel';
 import { Roster } from './panels/Roster';
 import { Toolbar } from './panels/Toolbar';
 import { useStore } from './store';
-import { applyAlign, movableFromSelection, nudge, pinCurrent, refFromSelection, startMoveForSelection } from './moveActions';
+import { applyAlign, movableFromSelection, nudge, pinCurrent, refFromSelection, startLos, startMoveForSelection } from './moveActions';
 
 export function App() {
   const showHelp = useStore((s) => s.showHelp);
@@ -66,6 +66,7 @@ export function App() {
       else if (e.key === 'm' || e.key === 'M') startMoveForSelection();
       else if (e.key === 'r' || e.key === 'R') st.setTool('ruler');
       else if (e.key === 'd' || e.key === 'D') st.setTool('distance');
+      else if (e.key === 'l' || e.key === 'L') startLos();
       else if (e.key === 'g' || e.key === 'G') {
         st.setTool('ring');
         const ref = refFromSelection(st.selection);

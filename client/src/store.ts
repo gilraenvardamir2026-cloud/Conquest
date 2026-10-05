@@ -21,6 +21,8 @@ import {
   type Battle,
   type BoardWarning,
   type EntityRef,
+  type LosMode,
+  type LosParty,
   type Facing,
   type MoveSegment,
   type MovingPiece,
@@ -37,7 +39,16 @@ export interface Selection {
   id: string;
 }
 
-export type Tool = 'select' | 'ruler' | 'distance' | 'ring' | 'drawTerrain' | 'placeZone' | 'placeObjective';
+export type Tool = 'select' | 'ruler' | 'distance' | 'ring' | 'los' | 'drawTerrain' | 'placeZone' | 'placeObjective';
+
+/** The line-of-sight check being shown. */
+export interface LosState {
+  acting: LosParty | null;
+  target: LosParty | null;
+  mode: LosMode;
+  /** Volley: draw every tested line, not just the best per stand. */
+  allLines: boolean;
+}
 
 /**
  * A move in progress. Nothing is sent until it is committed: then the whole
@@ -122,6 +133,9 @@ export interface AppState {
   checkResult: BoardWarning[] | null;
   moveSession: MoveSession | null;
   measure: MeasureState;
+  los: LosState;
+  /** Facing arcs of every piece are shown while A is held. */
+  showAllArcs: boolean;
 
   dispatch: (op: Op) => boolean;
   undo: () => void;
@@ -152,6 +166,8 @@ export interface AppState {
   cancelMove: () => void;
   setMeasure: (m: Partial<MeasureState>) => void;
   setRing: (r: Partial<RingOptions>) => void;
+  setLos: (l: Partial<LosState>) => void;
+  setShowAllArcs: (v: boolean) => void;
 }
 
 const STORAGE_KEY = 'conquest.local.battle.v1';
@@ -194,6 +210,8 @@ export const useStore = create<AppState>((set, get) => ({
   checkResult: null,
   moveSession: null,
   measure: { ruler: null, pair: [], ring: { ref: null, march: true, barrage: false, halfBarrage: false, custom: null } },
+  los: { acting: null, target: null, mode: 'sight', allLines: false },
+  showAllArcs: false,
 
   dispatch: (op) => commit(op, true) !== null,
 
@@ -299,6 +317,8 @@ export const useStore = create<AppState>((set, get) => ({
   cancelMove: () => set({ moveSession: null }),
   setMeasure: (m) => set((s) => ({ measure: { ...s.measure, ...m } })),
   setRing: (r) => set((s) => ({ measure: { ...s.measure, ring: { ...s.measure.ring, ...r } } })),
+  setLos: (l) => set((s) => ({ los: { ...s.los, ...l } })),
+  setShowAllArcs: (showAllArcs) => set({ showAllArcs }),
 }));
 
 /** Run an op through the reducer; record its inverse for undo unless it is itself an undo. */
