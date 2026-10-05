@@ -69,6 +69,7 @@ export const DEFAULT_SETTINGS: BattleSettings = {
   losAllFrontIds: [],
   losSampleStep: 0.25,
   anyoneCanEdit: false,
+  boardLocked: false,
 };
 
 export const PLAYER_COLORS: Record<PlayerSeat, string> = {

@@ -172,10 +172,18 @@ export interface DiceRoll {
   by: PlayerSeat;
   label: string;
   at: number;
+  /** 1..6, sorted when rolled; a re-rolled die keeps its position. */
   results: number[];
+  /** Highlight (and count) results ≤ target. */
   target?: number;
+  /** Per die: true once re-rolled (each die can be re-rolled only once). */
   rerolled: boolean[];
+  /** Where the numbers came from; 'local' if any die (re-rolls included) used the local fallback. */
   source: 'random.org' | 'local';
+  /** A roll-off: results[0] is Player 1's die, results[1] Player 2's. */
+  kind?: 'roll' | 'rolloff';
+  /** Roll-off pairs that tied and were re-rolled automatically. */
+  ties?: [number, number][];
 }
 
 /** Something on the board that can be measured from or to. */
@@ -219,6 +227,8 @@ export interface BattleSettings {
   losSampleStep: number;
   /** Casual play: anyone can edit anything. */
   anyoneCanEdit: boolean;
+  /** Board set for the game: terrain, zones and markers can no longer be edited (markers can still be damaged). */
+  boardLocked: boolean;
 }
 
 export interface LogEntry {

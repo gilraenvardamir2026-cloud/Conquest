@@ -218,7 +218,7 @@ settings (⚙ = in the Settings dialog).
   12 scenarios plus *Custom board*, the three sample layouts (optionally with
   garrison buildings), terrain presets, *Draw polygon*, lock/clear, the board
   check, pinned measurements and free tokens.
-- **Terrain editing**: select a piece to edit its name, Size (a 1 / 3 toggle),
+- **Terrain editing**: select a piece to edit its name, Size (0–3, presets start at the pack's recommendation),
   keywords, footprint and garrison fields. Drag it to move; drag the round knob to rotate (Shift:
   15° steps); for polygons drag vertices, click the small squares to add one
   and Alt-click (or right-click) a vertex to delete it.

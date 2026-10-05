@@ -20,7 +20,7 @@ import {
   standName,
 } from './regiment';
 import { COLLECTIONS, DOC_FIELDS, type Op, type OpEnvelope, type Patch, type RestoreEntry } from './ops';
-import type { Author, Battle, Character, LogEntry, Regiment, Slot, Stand, Terrain } from './types';
+import type { Author, Battle, Character, DiceRoll, LogEntry, Regiment, Slot, Stand, Terrain } from './types';
 
 export class OpError extends Error {}
 const fail = (msg: string): never => {
@@ -28,6 +28,22 @@ const fail = (msg: string): never => {
 };
 
 export const LOG_LIMIT = 1000;
+/** The dice tray keeps the last 20 rolls. */
+export const DICE_KEPT = 20;
+
+function successText(r: DiceRoll): string {
+  if (r.target === undefined || r.kind === 'rolloff') return '';
+  const n = r.results.filter((x) => x <= r.target!).length;
+  return ` · ${n} success${n === 1 ? '' : 'es'} (≤ ${r.target})`;
+}
+
+function describeRoll(r: DiceRoll): string {
+  if (r.kind === 'rolloff') {
+    const ties = r.ties?.length ? ` after ${plural(r.ties.length, 'tie')} (${r.ties.map((t) => t.join('–')).join(', ')})` : '';
+    return `roll-off: Player 1 ${r.results[0]}, Player 2 ${r.results[1]}${ties} (${r.source})`;
+  }
+  return `rolled ${diceWord(r.results.length)}${r.label ? ` for "${r.label}"` : ''}: ${r.results.join(', ')} (${r.source})${successText(r)}`;
+}
 
 export type ApplyResult =
   | { ok: true; battle: Battle; inverse: Op | null; touched: string[]; log: LogEntry }
@@ -82,6 +98,7 @@ function authorName(b: Battle, by: Author): string {
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const diceWord = (n: number) => `${n} ${n === 1 ? 'die' : 'dice'}`;
 
 // ---------------------------------------------------------------------------
 // Regiment / character helpers shared by several ops
@@ -659,6 +676,39 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       return { battle: { ...b, measurements: [] }, text: 'cleared pinned measurements' };
 
     // ----- Misc ----------------------------------------------------------------
+    case 'rollDice': {
+      const r = op.roll;
+      if (b.dice.some((d) => d.id === r.id)) fail('Duplicate roll');
+      if (!r.results.length || r.results.length > 60 || r.results.some((n) => !Number.isInteger(n) || n < 1 || n > 6)) fail('Invalid dice');
+      const dice = [...b.dice, { ...r, rerolled: r.results.map(() => false) }].slice(-DICE_KEPT);
+      return { battle: { ...b, dice }, text: describeRoll(r), kind: 'dice', noUndo: true };
+    }
+    case 'rerollDice': {
+      const i = b.dice.findIndex((d) => d.id === op.id);
+      if (i < 0) fail('That roll is no longer in the tray');
+      const r0 = b.dice[i];
+      if (!op.indices.length || op.indices.length !== op.values.length) fail('Nothing to re-roll');
+      if (new Set(op.indices).size !== op.indices.length) fail('A die is listed twice');
+      for (const k of op.indices) {
+        if (!Number.isInteger(k) || k < 0 || k >= r0.results.length) fail('No such die');
+        if (r0.rerolled[k]) fail('A die can be re-rolled only once');
+      }
+      if (op.values.some((n) => !Number.isInteger(n) || n < 1 || n > 6)) fail('Invalid dice');
+      const results = r0.results.slice();
+      const rerolled = r0.rerolled.slice();
+      op.indices.forEach((k, j) => {
+        results[k] = op.values[j];
+        rerolled[k] = true;
+      });
+      const nr: DiceRoll = { ...r0, results, rerolled, source: op.source === 'local' ? 'local' : r0.source };
+      const before = op.indices.map((k) => r0.results[k]).join(', ');
+      return {
+        battle: { ...b, dice: setAt(b.dice, i, nr) },
+        text: `re-rolled ${diceWord(op.indices.length)} of "${r0.label || 'roll'}": ${before} → ${op.values.join(', ')} (${op.source})${successText(nr)}`,
+        kind: 'dice',
+        noUndo: true,
+      };
+    }
     case 'logNote':
       if (!op.text.trim()) fail('Empty note');
       return { battle: b, text: op.text.slice(0, 2000), noUndo: true };

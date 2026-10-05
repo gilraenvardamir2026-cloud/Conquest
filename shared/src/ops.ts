@@ -8,6 +8,7 @@ import type {
   BattleSettings,
   Board,
   Character,
+  DiceRoll,
   FreeMarker,
   Location,
   Measurement,
@@ -116,10 +117,16 @@ export type Op =
   | { type: 'chat'; text: string }
   /** A report line (e.g. a line-of-sight result) posted to the log; changes nothing. */
   | { type: 'logNote'; text: string }
+  // Dice: created by the server only (numbers are rolled there), never sent by clients.
+  | { type: 'rollDice'; roll: DiceRoll }
+  | { type: 'rerollDice'; id: string; indices: number[]; values: number[]; source: DiceRoll['source'] }
   | { type: 'restore'; label: string; entries: RestoreEntry[] }
   | { type: 'replaceBattle'; battle: Battle };
 
 export type OpType = Op['type'];
+
+/** Operations only the server may create. */
+export const SERVER_ONLY_OPS: OpType[] = ['rollDice', 'rerollDice', 'restore', 'replaceBattle'];
 
 export interface OpEnvelope {
   /** Unique id chosen by the sender; also seeds ids the reducer creates. */
