@@ -115,3 +115,17 @@ describe('wound allocation', () => {
     expect(r.regiment.casualties).toHaveLength(0);
   });
 });
+
+describe('slot overlap', () => {
+  it('a half-offset rear stand blocks both integer cells it covers', async () => {
+    const { nextFreeSlot, slotsOverlap } = await import('./regiment');
+    expect(slotsOverlap({ rank: 1, file: 0.5 }, { rank: 1, file: 0 })).toBe(true);
+    expect(slotsOverlap({ rank: 1, file: 0.5 }, { rank: 1, file: 1 })).toBe(true);
+    expect(slotsOverlap({ rank: 1, file: 0.5 }, { rank: 1, file: 1.5 })).toBe(false);
+    expect(slotsOverlap({ rank: 1, file: 0 }, { rank: 2, file: 0 })).toBe(false);
+    // 7 stands in 4 files: rear rank at 0.5, 1.5, 2.5 covers every integer cell of rank 1.
+    const r = militia(7, 4);
+    expect(r.stands.filter((s) => s.slot.rank === 1).map((s) => s.slot.file)).toEqual([0.5, 1.5, 2.5]);
+    expect(nextFreeSlot(r)).toEqual({ rank: 2, file: 0 });
+  });
+});

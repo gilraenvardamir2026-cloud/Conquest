@@ -15,7 +15,7 @@ import {
   reflowRegiment,
   regimentLocalBox,
   removeStandToCasualties,
-  slotsEqual,
+  slotsOverlap,
   standName,
 } from './regiment';
 import { COLLECTIONS, DOC_FIELDS, type Op, type OpEnvelope, type Patch, type RestoreEntry } from './ops';
@@ -490,7 +490,7 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
           finite(s.rank, 'rank');
           finite(s.file, 'file');
           if (s.rank < 0 || !Number.isInteger(s.rank)) fail('Ranks are whole numbers from 0');
-          if (used.some((u) => slotsEqual(u, s))) fail('Two stands cannot share a slot');
+          if (used.some((u) => slotsOverlap(u, s))) fail('Two stands cannot overlap');
           used.push(s);
         }
         r = {
@@ -538,7 +538,7 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       const s0 = r0.casualties.find((s) => s.id === op.standId) ?? fail('Casualty not found');
       const without = { ...r0, casualties: r0.casualties.filter((s) => s.id !== s0.id) };
       const taken = [...without.stands.map((s) => s.slot), ...(r0.characterSlot ? [r0.characterSlot] : [])];
-      const slot = taken.some((t) => slotsEqual(t, s0.slot)) ? nextFreeSlot(without) : s0.slot;
+      const slot = taken.some((t) => slotsOverlap(t, s0.slot)) ? nextFreeSlot(without) : s0.slot;
       const r = { ...without, stands: [...without.stands, { ...s0, wounds: 0, slot }] };
       return { battle: updateRegimentAt(b, op.id, () => r), text: `${r0.name}: ${standName(r0, s0)} restored` };
     }

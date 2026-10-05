@@ -159,6 +159,17 @@ describe('regiment ops', () => {
     expect(c.y! + c.standD).toBeCloseTo(39, 9);
   });
 
+  it('a rider joins without taking a slot and keeps its own wounds', () => {
+    const rider: Character = { ...hero, id: 'rider', rider: true, standType: 'monster' };
+    let b = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: militia() }, { type: 'addCharacter', character: rider });
+    const before = b.regiments[0].stands.map((s) => s.slot);
+    b = run(b, { type: 'attachCharacter', characterId: 'rider', regimentId: 'mil' }, { type: 'adjustCharacterWounds', id: 'rider', delta: 2 });
+    expect(b.regiments[0].characterId).toBe('rider');
+    expect(b.regiments[0].characterSlot).toBeUndefined();
+    expect(b.regiments[0].stands.map((s) => s.slot)).toEqual(before);
+    expect(b.characters[0].wounds).toBe(2);
+  });
+
   it('refuses a second character or one of another owner', () => {
     const villain: Character = { ...hero, id: 'v', owner: 'p2' };
     const second: Character = { ...hero, id: 'h2' };

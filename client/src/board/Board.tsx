@@ -1,0 +1,603 @@
+// The battlefield: an SVG whose viewBox is in inches. Handles zoom (wheel,
+// around the cursor), pan (drag empty space, Space+drag or middle button),
+// selection, free dragging of pieces, terrain vertex editing / rotation,
+// drawing new terrain and dropping reserve units from the roster.
+//
+// Full move sessions with handles and measured segments come in milestone 2;
+// a free drag here commits one move operation and reports its distance.
+
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
+import {
+  centroid,
+  dist,
+  fmtIn,
+  makeId,
+  normAngle,
+  occupiedZoneIds,
+  OBJECTIVE_MARKER_SIDE,
+  OBJECTIVE_MARKER_WOUNDS,
+  placePolygon,
+  pointInPolygon,
+  radToDeg,
+  regimentLocalBox,
+  regimentPolygons,
+  terrainExtent,
+  terrainPolygon,
+  totalDamage,
+  type Battle,
+  type Terrain,
+  type Vec,
+} from '@conquest/shared';
+import { useStore, type Selection } from '../store';
+import { BoardLayer, CharacterShape, Defs, FreeMarkerShape, ObjectiveShape, RegimentShape, TerrainShape, Txt, ZoneShape } from './Shapes';
+import { labelSize, poseCentredAt, SELECT_STROKE, seatFacing } from './theme';
+
+type Drag =
+  | { type: 'pan'; sx: number; sy: number; cx: number; cy: number; moved: boolean }
+  | { type: 'entity'; sel: Selection; start: Vec; cur: Vec; moved: boolean; locked: boolean }
+  | { type: 'vertex'; terrainId: string; index: number; cur: Vec }
+  | { type: 'rotate'; terrainId: string; angle: number };
+
+const DRAG_THRESHOLD_PX = 4;
+
+export function Board() {
+  const battle = useStore((s) => s.battle);
+  const view = useStore((s) => s.view);
+  const viewport = useStore((s) => s.viewport);
+  const flip = useStore((s) => s.flip);
+  const tool = useStore((s) => s.tool);
+  const selection = useStore((s) => s.selection);
+  const { select, setView, setViewport, dispatch, setTool, notify } = useStore.getState();
+
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [draft, setDraft] = useState<Vec[]>([]);
+  const [pointer, setPointer] = useState<Vec | null>(null);
+  const [hover, setHover] = useState<{ sel: Selection; cx: number; cy: number } | null>(null);
+  const space = useRef(false);
+
+  const W = battle.board.width;
+  const D = battle.board.depth;
+  const fs = labelSize(view.scale);
+
+  // --- viewport size -------------------------------------------------------
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setViewport(el.clientWidth, el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [setViewport]);
+
+  const vbW = viewport.w / view.scale;
+  const vbH = viewport.h / view.scale;
+  const viewBox = `${view.cx - vbW / 2} ${view.cy - vbH / 2} ${vbW} ${vbH}`;
+
+  /** Client pixel → board inches (undoing the flip). */
+  const toBoard = useCallback(
+    (clientX: number, clientY: number): Vec => {
+      const r = svgRef.current!.getBoundingClientRect();
+      const ox = view.cx + (clientX - r.left - r.width / 2) / view.scale;
+      const oy = view.cy + (clientY - r.top - r.height / 2) / view.scale;
+      return flip ? { x: W - ox, y: D - oy } : { x: ox, y: oy };
+    },
+    [view, flip, W, D],
+  );
+
+  // --- zoom around the cursor ------------------------------------------------
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const { view: v } = useStore.getState();
+      const r = el.getBoundingClientRect();
+      const mx = e.clientX - r.left - r.width / 2;
+      const my = e.clientY - r.top - r.height / 2;
+      const k = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015));
+      const scale = Math.max(3, Math.min(200, v.scale * k));
+      // Keep the point under the cursor fixed.
+      const px = v.cx + mx / v.scale;
+      const py = v.cy + my / v.scale;
+      setView({ scale, cx: px - mx / scale, cy: py - my / scale });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [setView]);
+
+  // --- keyboard ----------------------------------------------------------------
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.closest('input, textarea, select')) return;
+      if (e.code === 'Space') {
+        space.current = true;
+        e.preventDefault();
+      }
+      if (tool === 'drawTerrain') {
+        if (e.key === 'Enter') finishDraft();
+        if (e.key === 'Escape') {
+          setDraft([]);
+          setTool('select');
+        }
+        if (e.key === 'Backspace') setDraft((d) => d.slice(0, -1));
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'Space') space.current = false;
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  });
+
+  const finishDraft = () => {
+    if (draft.length < 3) {
+      notify('A terrain piece needs at least 3 points');
+      return;
+    }
+    const c = centroid(draft);
+    const t: Terrain = {
+      id: makeId(),
+      name: 'Terrain',
+      shape: { kind: 'polygon', points: draft.map((p) => [round2(p.x - c.x), round2(p.y - c.y)] as [number, number]) },
+      x: round2(c.x),
+      y: round2(c.y),
+      angle: 0,
+      size: 0,
+      keywords: [],
+      locked: false,
+    };
+    if (dispatch({ type: 'addTerrain', terrain: t })) select({ kind: 'terrain', id: t.id });
+    setDraft([]);
+    setTool('select');
+  };
+
+  // --- derived ----------------------------------------------------------------
+  const occupied = useMemo(() => occupiedZoneIds(battle), [battle]);
+  const highlight = useStore((s) => s.highlight);
+  const warnIds = useMemo(() => new Set(highlight), [highlight]);
+
+  const offsetFor = (sel: Selection) =>
+    drag?.type === 'entity' && drag.moved && !drag.locked && drag.sel.kind === sel.kind && drag.sel.id === sel.id
+      ? { x: drag.cur.x - drag.start.x, y: drag.cur.y - drag.start.y }
+      : undefined;
+  const isSel = (kind: Selection['kind'], id: string) => selection?.kind === kind && selection.id === id;
+
+  // --- pointer handling --------------------------------------------------------
+  const capture = (e: RPointerEvent) => svgRef.current?.setPointerCapture(e.pointerId);
+
+  const isLocked = (sel: Selection): boolean => {
+    const b = battle;
+    switch (sel.kind) {
+      case 'terrain':
+        return !!b.terrain.find((t) => t.id === sel.id)?.locked;
+      case 'zone':
+        return !!b.zones.find((z) => z.id === sel.id)?.locked;
+      case 'objective':
+        return !!b.objectiveMarkers.find((m) => m.id === sel.id)?.locked;
+      default:
+        return false;
+    }
+  };
+
+  const onEntityDown = (sel: Selection) => (e: RPointerEvent<SVGElement>) => {
+    if (e.button !== 0 || space.current || tool !== 'select') return;
+    e.stopPropagation();
+    select(sel);
+    const p = toBoard(e.clientX, e.clientY);
+    capture(e);
+    setDrag({ type: 'entity', sel, start: p, cur: p, moved: false, locked: isLocked(sel) });
+  };
+
+  const hoverFor = (sel: Selection) => ({
+    onPointerEnter: (e: RPointerEvent<SVGElement>) => setHover({ sel, cx: e.clientX, cy: e.clientY }),
+    onPointerLeave: () => setHover((h) => (h && h.sel.id === sel.id ? null : h)),
+  });
+
+  const onBackgroundDown = (e: RPointerEvent<SVGSVGElement>) => {
+    const p = toBoard(e.clientX, e.clientY);
+    if (e.button === 1 || space.current || (e.button === 0 && tool === 'select')) {
+      capture(e);
+      setDrag({ type: 'pan', sx: e.clientX, sy: e.clientY, cx: view.cx, cy: view.cy, moved: false });
+      return;
+    }
+    if (e.button !== 0) return;
+    if (tool === 'drawTerrain') {
+      if (e.detail >= 2) finishDraft();
+      else setDraft((d) => [...d, { x: round2(p.x), y: round2(p.y) }]);
+    } else if (tool === 'placeZone') {
+      const id = makeId();
+      if (dispatch({ type: 'addZone', zone: { id, x: round2(p.x), y: round2(p.y), diameter: 6, locked: false } })) select({ kind: 'zone', id });
+      setTool('select');
+    } else if (tool === 'placeObjective') {
+      const id = makeId();
+      const ok = dispatch({
+        type: 'addObjectiveMarker',
+        marker: { id, x: round2(p.x), y: round2(p.y), woundsMax: OBJECTIVE_MARKER_WOUNDS, damageBy: { p1: 0, p2: 0 }, destroyed: false, locked: false },
+      });
+      if (ok) select({ kind: 'objective', id });
+      setTool('select');
+    }
+  };
+
+  const onPointerMove = (e: RPointerEvent<SVGSVGElement>) => {
+    const p = toBoard(e.clientX, e.clientY);
+    setPointer(p);
+    if (hover) setHover({ ...hover, cx: e.clientX, cy: e.clientY });
+    if (!drag) return;
+    if (drag.type === 'pan') {
+      const dx = e.clientX - drag.sx;
+      const dy = e.clientY - drag.sy;
+      const moved = drag.moved || Math.hypot(dx, dy) > DRAG_THRESHOLD_PX;
+      if (moved) setView({ cx: drag.cx - dx / view.scale, cy: drag.cy - dy / view.scale });
+      if (moved !== drag.moved) setDrag({ ...drag, moved });
+    } else if (drag.type === 'entity') {
+      const px = Math.hypot(p.x - drag.start.x, p.y - drag.start.y) * view.scale;
+      setDrag({ ...drag, cur: p, moved: drag.moved || px > DRAG_THRESHOLD_PX });
+    } else if (drag.type === 'vertex') {
+      setDrag({ ...drag, cur: p });
+    } else if (drag.type === 'rotate') {
+      const t = battle.terrain.find((x) => x.id === drag.terrainId);
+      if (!t) return;
+      let a = radToDeg(Math.atan2(p.y - t.y, p.x - t.x)) + 90;
+      a = e.shiftKey ? Math.round(a / 15) * 15 : Math.round(a);
+      setDrag({ ...drag, angle: normAngle(a) });
+    }
+  };
+
+  const onPointerUp = (e: RPointerEvent<SVGSVGElement>) => {
+    const d = drag;
+    setDrag(null);
+    if (!d) return;
+    if (d.type === 'pan') {
+      if (!d.moved && tool === 'select') select(null);
+      return;
+    }
+    if (d.type === 'vertex') {
+      const t = battle.terrain.find((x) => x.id === d.terrainId);
+      if (!t || t.shape.kind !== 'polygon') return;
+      const pts = t.shape.points.slice();
+      pts[d.index] = toLocal(t, d.cur);
+      dispatch({ type: 'updateTerrain', id: t.id, patch: { shape: { kind: 'polygon', points: pts } } });
+      return;
+    }
+    if (d.type === 'rotate') {
+      dispatch({ type: 'updateTerrain', id: d.terrainId, patch: { angle: d.angle } });
+      return;
+    }
+    if (!d.moved) return;
+    if (d.locked) {
+      notify('Locked: it cannot be moved');
+      return;
+    }
+    const dx = d.cur.x - d.start.x;
+    const dy = d.cur.y - d.start.y;
+    const moved = Math.hypot(dx, dy);
+    const sel = d.sel;
+    const r2 = (n: number) => Math.round(n * 1000) / 1000;
+    switch (sel.kind) {
+      case 'regiment': {
+        const r = battle.regiments.find((x) => x.id === sel.id)!;
+        dispatch({ type: 'moveRegiment', id: r.id, pose: { x: r2(r.x + dx), y: r2(r.y + dy), angle: r.angle }, summary: `free drag ${fmtIn(moved)}` });
+        break;
+      }
+      case 'character': {
+        const c = battle.characters.find((x) => x.id === sel.id)!;
+        // Dropping a character on a friendly regiment joins it.
+        const p = toBoard(e.clientX, e.clientY);
+        const target = battle.regiments.find(
+          (r) => r.location === 'board' && !r.garrisonId && r.owner === c.owner && regimentPolygons(r).some((poly) => pointInPolygon(p, poly)),
+        );
+        if (target) {
+          if (target.standType !== c.standType && !c.rider) notify(`Stand types differ (${c.standType} / ${target.standType}) — joined anyway`);
+          dispatch({ type: 'attachCharacter', characterId: c.id, regimentId: target.id });
+        } else {
+          dispatch({ type: 'moveCharacter', id: c.id, pose: { x: r2((c.x ?? 0) + dx), y: r2((c.y ?? 0) + dy), angle: c.angle ?? 0 }, summary: `free drag ${fmtIn(moved)}` });
+        }
+        break;
+      }
+      case 'terrain': {
+        const t = battle.terrain.find((x) => x.id === sel.id)!;
+        dispatch({ type: 'updateTerrain', id: t.id, patch: { x: r2(t.x + dx), y: r2(t.y + dy) } });
+        break;
+      }
+      case 'zone': {
+        const z = battle.zones.find((x) => x.id === sel.id)!;
+        dispatch({ type: 'updateZone', id: z.id, patch: { x: r2(z.x + dx), y: r2(z.y + dy) } });
+        break;
+      }
+      case 'objective': {
+        const m = battle.objectiveMarkers.find((x) => x.id === sel.id)!;
+        dispatch({ type: 'updateObjectiveMarker', id: m.id, patch: { x: r2(m.x + dx), y: r2(m.y + dy) } });
+        break;
+      }
+      case 'marker': {
+        const m = battle.markers.find((x) => x.id === sel.id)!;
+        dispatch({ type: 'updateMarker', id: m.id, patch: { x: r2(m.x + dx), y: r2(m.y + dy) } });
+        break;
+      }
+    }
+  };
+
+  // --- drop from roster ----------------------------------------------------------
+  const onDrop = (e: React.DragEvent) => {
+    const raw = e.dataTransfer.getData('application/x-conquest');
+    if (!raw) return;
+    e.preventDefault();
+    const { kind, id } = JSON.parse(raw) as { kind: 'regiment' | 'character'; id: string };
+    const p = toBoard(e.clientX, e.clientY);
+    if (kind === 'regiment') {
+      const r = battle.regiments.find((x) => x.id === id);
+      if (!r) return;
+      const box = regimentLocalBox(r);
+      const pose = poseCentredAt(box.u1, box.v1, seatFacing(r.owner), p);
+      if (dispatch({ type: 'setRegimentLocation', id, location: 'board', pose: roundPose(pose) })) select({ kind: 'regiment', id });
+    } else {
+      const c = battle.characters.find((x) => x.id === id);
+      if (!c) return;
+      const target = battle.regiments.find(
+        (r) => r.location === 'board' && !r.garrisonId && r.owner === c.owner && regimentPolygons(r).some((poly) => pointInPolygon(p, poly)),
+      );
+      if (target) {
+        dispatch({ type: 'attachCharacter', characterId: id, regimentId: target.id });
+        return;
+      }
+      const pose = poseCentredAt(c.standW, c.standD, seatFacing(c.owner), p);
+      if (dispatch({ type: 'setCharacterLocation', id, location: 'board', pose: roundPose(pose) })) select({ kind: 'character', id });
+    }
+  };
+
+  // --- selection handles ------------------------------------------------------------
+  const selTerrain = selection?.kind === 'terrain' ? battle.terrain.find((t) => t.id === selection.id) : undefined;
+  const handleR = 7 / view.scale;
+
+  const terrainForRender = (t: Terrain): Terrain => {
+    if (drag?.type === 'vertex' && drag.terrainId === t.id && t.shape.kind === 'polygon') {
+      const pts = t.shape.points.slice();
+      pts[drag.index] = toLocal(t, drag.cur);
+      return { ...t, shape: { kind: 'polygon', points: pts } };
+    }
+    if (drag?.type === 'rotate' && drag.terrainId === t.id) return { ...t, angle: drag.angle };
+    return t;
+  };
+
+  const handles = (() => {
+    if (!selTerrain || selTerrain.locked || tool !== 'select') return null;
+    const t = terrainForRender(selTerrain);
+    const ext = terrainExtent(t);
+    const knob = placePolygon([[0, -(Math.max(ext.d, ext.w) / 2 + 1.2)]], t.x, t.y, t.angle)[0];
+    const out: React.ReactNode[] = [
+      <line key="rl" x1={t.x} y1={t.y} x2={knob.x} y2={knob.y} stroke={SELECT_STROKE} strokeWidth={0.06} strokeDasharray="0.2 0.15" />,
+      <circle
+        key="rot"
+        className="handle rotate"
+        cx={knob.x}
+        cy={knob.y}
+        r={handleR * 1.2}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          capture(e);
+          setDrag({ type: 'rotate', terrainId: t.id, angle: t.angle });
+        }}
+      >
+        <title>Drag to rotate (Shift: 15° steps)</title>
+      </circle>,
+    ];
+    if (t.shape.kind === 'polygon') {
+      const world = terrainPolygon(t);
+      const n = world.length;
+      world.forEach((p, i) => {
+        const q = world[(i + 1) % n];
+        const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+        out.push(
+          <rect
+            key={`m${i}`}
+            className="handle mid"
+            x={mid.x - handleR * 0.7}
+            y={mid.y - handleR * 0.7}
+            width={handleR * 1.4}
+            height={handleR * 1.4}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              if (t.shape.kind !== 'polygon') return;
+              const pts = t.shape.points.slice();
+              pts.splice(i + 1, 0, toLocal(t, mid));
+              dispatch({ type: 'updateTerrain', id: t.id, patch: { shape: { kind: 'polygon', points: pts } } });
+            }}
+          >
+            <title>Click to add a vertex</title>
+          </rect>,
+        );
+        out.push(
+          <circle
+            key={`v${i}`}
+            className="handle vertex"
+            cx={p.x}
+            cy={p.y}
+            r={handleR}
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              if (t.shape.kind !== 'polygon') return;
+              if (e.altKey || e.button === 2) {
+                if (t.shape.points.length <= 3) return notify('A polygon needs at least 3 points');
+                const pts = t.shape.points.filter((_, j) => j !== i);
+                dispatch({ type: 'updateTerrain', id: t.id, patch: { shape: { kind: 'polygon', points: pts } } });
+                return;
+              }
+              capture(e);
+              setDrag({ type: 'vertex', terrainId: t.id, index: i, cur: p });
+            }}
+          >
+            <title>Drag to move · Alt-click or right-click to delete</title>
+          </circle>,
+        );
+      });
+    }
+    return out;
+  })();
+
+  // --- drag read-out ------------------------------------------------------------
+  const readout = (() => {
+    if (drag?.type !== 'entity' || !drag.moved || drag.locked) return null;
+    const d = dist(drag.start, drag.cur);
+    return (
+      <Txt x={drag.cur.x} y={drag.cur.y - fs * 1.5} fs={fs * 1.1} flip={flip} weight={800} fill="#000">
+        {fmtIn(d)}
+      </Txt>
+    );
+  })();
+
+  const cursor = tool === 'select' ? (drag?.type === 'pan' && drag.moved ? 'grabbing' : 'default') : 'crosshair';
+
+  return (
+    <div
+      ref={wrapRef}
+      className="board-wrap"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes('application/x-conquest')) e.preventDefault();
+      }}
+      onDrop={onDrop}
+    >
+      <svg
+        ref={svgRef}
+        className="board-svg"
+        viewBox={viewBox}
+        style={{ cursor }}
+        onPointerDown={onBackgroundDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={() => setPointer(null)}
+        onContextMenu={(e) => tool !== 'select' && e.preventDefault()}
+      >
+        <Defs />
+        <g transform={flip ? `rotate(180 ${W / 2} ${D / 2})` : undefined}>
+          <BoardLayer b={battle} fs={fs} flip={flip} />
+          {battle.zones.map((z) => {
+            const sel = { kind: 'zone' as const, id: z.id };
+            return (
+              <ZoneShape key={z.id} z={z} b={battle} fs={fs} flip={flip} occupied={occupied.has(z.id)} selected={isSel('zone', z.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />
+            );
+          })}
+          {battle.terrain.map((t0) => {
+            const t = terrainForRender(t0);
+            const sel = { kind: 'terrain' as const, id: t.id };
+            return (
+              <TerrainShape key={t.id} t={t} b={battle} fs={fs} flip={flip} selected={isSel('terrain', t.id)} warn={warnIds.has(t.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />
+            );
+          })}
+          {battle.objectiveMarkers
+            .filter((m) => !m.destroyed)
+            .map((m) => {
+              const sel = { kind: 'objective' as const, id: m.id };
+              return <ObjectiveShape key={m.id} m={m} b={battle} fs={fs} flip={flip} selected={isSel('objective', m.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />;
+            })}
+          {battle.markers.map((m) => {
+            const sel = { kind: 'marker' as const, id: m.id };
+            return <FreeMarkerShape key={m.id} m={m} fs={fs} flip={flip} selected={isSel('marker', m.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} />;
+          })}
+          {battle.regiments
+            .filter((r) => r.location === 'board' && !r.garrisonId)
+            .map((r) => {
+              const sel = { kind: 'regiment' as const, id: r.id };
+              return <RegimentShape key={r.id} reg={r} b={battle} fs={fs} flip={flip} selected={isSel('regiment', r.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />;
+            })}
+          {battle.characters
+            .filter((c) => c.location === 'board' && !c.attachedTo)
+            .map((c) => {
+              const sel = { kind: 'character' as const, id: c.id };
+              return <CharacterShape key={c.id} ch={c} b={battle} fs={fs} flip={flip} selected={isSel('character', c.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />;
+            })}
+          {handles}
+          {tool === 'drawTerrain' && draft.length > 0 && (
+            <g pointerEvents="none">
+              <polyline
+                points={[...draft, ...(pointer ? [pointer] : [])].map((p) => `${p.x},${p.y}`).join(' ')}
+                fill="rgba(120,140,90,0.25)"
+                stroke="#333"
+                strokeWidth={0.08}
+                strokeDasharray="0.3 0.2"
+              />
+              {draft.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r={handleR * 0.8} fill="#333" />
+              ))}
+            </g>
+          )}
+          {readout}
+        </g>
+      </svg>
+      {hover && !drag && <Tooltip b={battle} sel={hover.sel} x={hover.cx} y={hover.cy} />}
+      {tool === 'drawTerrain' && (
+        <div className="board-hint">Click to add points · double-click or Enter to finish · Backspace removes the last point · Esc cancels</div>
+      )}
+      {(tool === 'placeZone' || tool === 'placeObjective') && <div className="board-hint">Click on the board to place · Esc cancels</div>}
+      {pointer && (
+        <div className="coords">
+          {pointer.x.toFixed(1)}", {pointer.y.toFixed(1)}"
+        </div>
+      )}
+    </div>
+  );
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const roundPose = (p: { x: number; y: number; angle: number }) => ({ x: round2(p.x), y: round2(p.y), angle: p.angle });
+
+/** World point → polygon-local coordinates of a terrain piece (undoing its rotation). */
+function toLocal(t: Terrain, p: Vec): [number, number] {
+  const r = (-t.angle * Math.PI) / 180;
+  const dx = p.x - t.x;
+  const dy = p.y - t.y;
+  return [round2(dx * Math.cos(r) - dy * Math.sin(r)), round2(dx * Math.sin(r) + dy * Math.cos(r))];
+}
+
+function Tooltip({ b, sel, x, y }: { b: Battle; sel: Selection; x: number; y: number }) {
+  const lines: string[] = [];
+  if (sel.kind === 'regiment') {
+    const r = b.regiments.find((q) => q.id === sel.id);
+    if (!r) return null;
+    const ch = r.characterId ? b.characters.find((c) => c.id === r.characterId) : undefined;
+    lines.push(`${r.name} — ${b.players[r.owner].name}`);
+    lines.push(`${r.stands.length} stand(s) · ${r.standType} · damage ${totalDamage(r)}`);
+    const wounded = r.stands.filter((s) => s.wounds > 0).map((s) => `${s.wounds}/${s.woundsMax}`);
+    if (wounded.length) lines.push(`Wounded: ${wounded.join(', ')}`);
+    if (ch) lines.push(`Character: ${ch.name} ${ch.wounds}/${ch.woundsMax}`);
+    if (r.tags.length) lines.push(`Tags: ${r.tags.join(', ')}`);
+  } else if (sel.kind === 'character') {
+    const c = b.characters.find((q) => q.id === sel.id);
+    if (!c) return null;
+    lines.push(`${c.name} — ${b.players[c.owner].name}`);
+    lines.push(`${c.standType} · wounds ${c.wounds}/${c.woundsMax}`);
+  } else if (sel.kind === 'terrain') {
+    const t = b.terrain.find((q) => q.id === sel.id);
+    if (!t) return null;
+    lines.push(`${t.name} · Size ${t.size}${t.locked ? ' · locked' : ''}`);
+    if (t.keywords.length) lines.push(t.keywords.join(', '));
+    if (t.garrison) lines.push(`Garrison: Defense ${t.garrison.defense}, Capacity ${t.garrison.capacity}`);
+  } else if (sel.kind === 'zone') {
+    const z = b.zones.find((q) => q.id === sel.id);
+    if (!z) return null;
+    lines.push(`Objective zone ${z.label ?? ''} · ${z.diameter}"`);
+    lines.push(z.friendlyTo ? `Friendly to ${b.players[z.friendlyTo].name}` : 'Neutral');
+    if (z.locked) lines.push('Locked by the scenario');
+  } else if (sel.kind === 'objective') {
+    const m = b.objectiveMarkers.find((q) => q.id === sel.id);
+    if (!m) return null;
+    lines.push(`Objective marker ${m.label ?? '(neutral)'} · ${OBJECTIVE_MARKER_SIDE.toFixed(2)}" square, Size 2`);
+    lines.push(`Damage: P1 ${m.damageBy.p1}/${m.woundsMax} · P2 ${m.damageBy.p2}/${m.woundsMax}`);
+  }
+  if (!lines.length) return null;
+  return (
+    <div className="tooltip" style={{ left: x + 14, top: y + 14 }}>
+      {lines.map((l, i) => (
+        <div key={i} className={i === 0 ? 'tt-title' : undefined}>
+          {l}
+        </div>
+      ))}
+    </div>
+  );
+}

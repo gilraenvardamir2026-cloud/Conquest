@@ -223,7 +223,7 @@ export function createRegiment(p: NewRegimentParams): Regiment {
 /** First free slot after the current formation, for a newly added stand. */
 export function nextFreeSlot(reg: Regiment): Slot {
   const taken = occupiedSlots(reg);
-  const isFree = (s: Slot) => !taken.some((t) => t.rank === s.rank && Math.abs(t.file - s.file) < 0.01);
+  const isFree = (s: Slot) => !taken.some((t) => slotsOverlap(t, s));
   const f = Math.max(1, reg.files);
   for (let rank = 0; rank < 1000; rank++) {
     for (let file = 0; file < f; file++) if (isFree({ rank, file })) return { rank, file };
@@ -233,6 +233,11 @@ export function nextFreeSlot(reg: Regiment): Slot {
 
 export function slotsEqual(a: Slot, b: Slot): boolean {
   return a.rank === b.rank && Math.abs(a.file - b.file) < 0.01;
+}
+
+/** Two slots overlap when they share a rank and sit less than one stand apart (files can be fractional). */
+export function slotsOverlap(a: Slot, b: Slot): boolean {
+  return a.rank === b.rank && Math.abs(a.file - b.file) < 1 - 0.01;
 }
 
 // ---------------------------------------------------------------------------
