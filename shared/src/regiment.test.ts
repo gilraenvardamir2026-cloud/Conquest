@@ -197,3 +197,51 @@ describe('slot overlap', () => {
     expect(nextFreeSlot(r)).toEqual({ rank: 2, file: 0 });
   });
 });
+
+describe('a wounded stand takes every wound until it is destroyed', () => {
+  // Small seeded PRNG so the sweep is repeatable.
+  const rng = (seed: number) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+
+  it('holds for every formation, batch size, engagement and tie choice', () => {
+    const rand = rng(12345);
+    let checked = 0;
+    for (let stands = 1; stands <= 12; stands++) {
+      for (let files = 1; files <= 6; files++) {
+        for (let trial = 0; trial < 6; trial++) {
+          let r = militia(stands, files);
+          const engaged = new Set(r.stands.filter(() => rand() < 0.3).map((s) => s.id));
+          let current: string | undefined; // stand currently being worn down
+          // Feed wounds in random batch sizes, picking ties at random.
+          while (r.stands.length) {
+            const batch = 1 + Math.floor(rand() * 6);
+            const choices: string[] = [];
+            let plan = allocateWounds(r, batch, true, engaged, { choices, stopAtTie: true });
+            while (plan.pendingTie) {
+              const c = plan.pendingTie.candidates;
+              choices.push(c[Math.floor(rand() * c.length)].id);
+              plan = allocateWounds(r, batch, true, engaged, { choices, stopAtTie: true });
+            }
+            // Replay the same batch one wound at a time and check the rule after each wound.
+            let used = 0;
+            for (let i = 0; i < batch && r.stands.length; i++) {
+              const step = allocateWounds(r, 1, true, engaged, { choices: choices.slice(used) });
+              used += step.choicesUsed;
+              const hit = r.stands.find((s) => {
+                const after = step.regiment.stands.find((x) => x.id === s.id);
+                return !after || after.wounds !== s.wounds;
+              })!;
+              if (current) expect(hit.id, `${stands}x${files}: wound went elsewhere while a stand was wounded`).toBe(current);
+              const after = step.regiment.stands.find((x) => x.id === hit.id);
+              current = after ? hit.id : undefined; // destroyed → free to move on
+              r = step.regiment;
+              checked++;
+            }
+            // Batch and one-at-a-time agree.
+            expect(r.stands.length).toBe(plan.regiment.stands.length);
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(1000);
+  });
+});
