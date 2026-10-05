@@ -9,7 +9,7 @@ import { NumberField, TextField } from '../ui/fields';
 
 const CELL = 40;
 
-export function StandGrid({ reg, b }: { reg: Regiment; b: Battle }) {
+export function StandGrid({ reg, b, tieIds, onTiePick }: { reg: Regiment; b: Battle; tieIds?: string[]; onTiePick?: (id: string) => void }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [reform, setReform] = useState<{ files: number; slots: Record<string, Slot> } | null>(null);
   const engaged = useMemo(() => engagedStandIds(b, reg), [b, reg]);
@@ -54,6 +54,10 @@ export function StandGrid({ reg, b }: { reg: Regiment; b: Battle }) {
   };
 
   const clickItem = (id: string) => {
+    if (tieIds?.includes(id) && onTiePick) {
+      onTiePick(id);
+      return;
+    }
     if (!reform || !picked || picked === id) {
       setPicked(picked === id ? null : id);
       return;
@@ -107,7 +111,7 @@ export function StandGrid({ reg, b }: { reg: Regiment; b: Battle }) {
             <button
               type="button"
               key={it.id}
-              className={`cell stand ${it.isChar ? 'char' : ''} ${picked === it.id ? 'picked' : ''} ${dead ? 'dead' : ''}`}
+              className={`cell stand ${it.isChar ? 'char' : ''} ${picked === it.id ? 'picked' : ''} ${dead ? 'dead' : ''} ${tieIds?.includes(it.id) ? 'tie' : ''}`}
               style={{ left: left(it.slot), top: top(it.slot), width: CELL, height: cellH, background: b.players[reg.owner].color }}
               onClick={() => clickItem(it.id)}
               title={it.isChar ? ch!.name : `${standName(reg, s)}${engaged.has(s.id) ? ' · engaged (takes wounds after unengaged stands)' : ''}`}

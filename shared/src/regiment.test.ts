@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocateWounds, autoLayout, createRegiment, nextWoundTarget, reflowRegiment, slotName } from './regiment';
+import { allocateWounds, autoLayout, createRegiment, nextWoundCandidates, nextWoundTarget, reflowRegiment, slotName } from './regiment';
 import { STAND_PRESETS } from './presets';
 import type { Regiment, Slot } from './types';
 
@@ -138,6 +138,36 @@ describe('wound allocation', () => {
     expect(removed.slice(0, 3)).not.toContain(rearCentre.id);
     expect(removed.slice(3)).toEqual(expect.arrayContaining([rearLeft.id, rearCentre.id]));
     expect(res.regiment.stands.every((s) => s.isCommand)).toBe(true);
+  });
+
+  it('equidistant ends are a tie the player settles', () => {
+    const r = militia();
+    const rearLeft = r.stands.find((s) => s.slot.rank === 1 && s.slot.file === 0)!;
+    const rearRight = r.stands.find((s) => s.slot.rank === 1 && s.slot.file === 2)!;
+    expect(nextWoundCandidates(r).map((s) => s.id)).toEqual([rearLeft.id, rearRight.id]);
+
+    // Planning stops at the tie, before wound 1.
+    const plan = allocateWounds(r, 5, true, new Set(), { stopAtTie: true });
+    expect(plan.pendingTie?.wound).toBe(1);
+    expect(plan.pendingTie?.candidates.map((s) => s.id)).toEqual([rearLeft.id, rearRight.id]);
+    expect(plan.regiment).toBe(r);
+
+    // Choosing the right end: it is destroyed, then alternation sends wound 5 to the left end (no second tie).
+    const res = allocateWounds(r, 5, true, new Set(), { choices: [rearRight.id], stopAtTie: true });
+    expect(res.pendingTie).toBeUndefined();
+    expect(res.choicesUsed).toBe(1);
+    expect(res.steps).toEqual(['rear-right removed', 'rear-left 1/4']);
+  });
+
+  it('a 5-wide rank asks again for the inner pair', () => {
+    const r = militia(10, 5);
+    const plan = allocateWounds(r, 12, true, new Set(), { choices: ['mil-s5'], stopAtTie: true });
+    // Wound 1: the player picks the rear-left end (mil-s5). Wounds 1–8 take both ends; wound 9 is the tie between files 1 and 3.
+    expect(plan.pendingTie?.wound).toBe(9);
+    expect(plan.pendingTie?.candidates.map((s) => s.slot)).toEqual([
+      { rank: 1, file: 1 },
+      { rank: 1, file: 3 },
+    ]);
   });
 
   it('a wounded stand keeps taking wounds before anything else', () => {

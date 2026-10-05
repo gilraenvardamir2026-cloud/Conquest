@@ -434,6 +434,24 @@ button.unit {
   outline: 3px solid var(--select);
   outline-offset: -3px;
 }
+.cell.stand.tie {
+  outline: 3px dashed var(--select);
+  outline-offset: -3px;
+  animation: tie-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes tie-pulse {
+  from {
+    filter: brightness(1);
+  }
+  to {
+    filter: brightness(1.35);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.stand.tie {
+    animation: none;
+  }
+}
 .cell.stand.dead {
   opacity: 0.5;
 }

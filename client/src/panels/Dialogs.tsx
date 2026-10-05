@@ -57,6 +57,12 @@ export function SettingsDialog() {
         <Row label="Ask before removing a destroyed stand">
           <input type="checkbox" checked={s.confirmStandRemoval} onChange={(e) => set({ confirmStandRemoval: e.target.checked })} />
         </Row>
+        <Row label="Two stands equally far from the command stand">
+          <select value={s.woundTies ?? 'ask'} onChange={(e) => set({ woundTies: e.target.value as BattleSettings['woundTies'] })}>
+            <option value="ask">ask which one takes the wound</option>
+            <option value="left">the left one takes it</option>
+          </select>
+        </Row>
         <Row label="Close ranks when a character leaves">
           <input type="checkbox" checked={s.reformOnDetach !== false} onChange={(e) => set({ reformOnDetach: e.target.checked })} />
         </Row>

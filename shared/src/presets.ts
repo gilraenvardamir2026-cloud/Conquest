@@ -62,6 +62,7 @@ export const DEFAULT_SETTINGS: BattleSettings = {
   standPresets: STAND_PRESETS,
   confirmStandRemoval: false,
   reformOnDetach: true,
+  woundTies: 'ask',
   characterSide: 'right',
   losObstructing: 'tournament',
   losSizeComparison: 'both',

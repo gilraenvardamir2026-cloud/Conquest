@@ -353,10 +353,10 @@ function commandFileCentre(reg: Regiment): number {
  * both sides have lost the same number, the end farther from the command
  * stand goes (ties: left).
  */
-function alternatingEnd(reg: Regiment, cands: Stand[], cmdX: number): Stand {
+function alternatingEnd(reg: Regiment, cands: Stand[], cmdX: number): Stand[] {
   const rear = Math.max(...cands.map((s) => s.slot.rank));
   const row = cands.filter((s) => s.slot.rank === rear).sort((a, b) => a.slot.file - b.slot.file);
-  if (row.length === 1) return row[0];
+  if (row.length === 1) return [row[0]];
   const left = row[0];
   const right = row[row.length - 1];
   const rankSlots = [...reg.stands, ...reg.casualties].filter((s) => s.slot.rank === rear).map((s) => s.slot.file);
@@ -364,11 +364,12 @@ function alternatingEnd(reg: Regiment, cands: Stand[], cmdX: number): Stand {
   const gone = reg.casualties.filter((s) => s.slot.rank === rear);
   const goneLeft = gone.filter((s) => s.slot.file + 0.5 < mid - 1e-6).length;
   const goneRight = gone.filter((s) => s.slot.file + 0.5 > mid + 1e-6).length;
-  if (goneLeft < goneRight) return left;
-  if (goneRight < goneLeft) return right;
+  if (goneLeft < goneRight) return [left];
+  if (goneRight < goneLeft) return [right];
   const dl = Math.abs(left.slot.file + 0.5 - cmdX);
   const dr = Math.abs(right.slot.file + 0.5 - cmdX);
-  return dr > dl + 1e-6 ? right : left;
+  if (Math.abs(dl - dr) <= 1e-6) return [left, right]; // equidistant: the player chooses
+  return dr > dl ? [right] : [left];
 }
 
 /**
@@ -382,10 +383,14 @@ function alternatingEnd(reg: Regiment, cands: Stand[], cmdX: number): Stand {
  *     as few unengaged stands as possible are left.
  *  5. The command stand is always last.
  * Stands already at woundsMax (awaiting removal) are skipped.
+ *
+ * Returns the stand that takes the next wound, or two stands (left one first)
+ * when both ends of the rank are equally far from the command stand: the
+ * player chooses between them. Empty when no stand can take a wound.
  */
-export function nextWoundTarget(reg: Regiment, engaged: ReadonlySet<string> = new Set()): Stand | undefined {
+export function nextWoundCandidates(reg: Regiment, engaged: ReadonlySet<string> = new Set()): Stand[] {
   const alive = reg.stands.filter((s) => s.wounds < s.woundsMax);
-  if (!alive.length) return undefined;
+  if (!alive.length) return [];
   const cmdX = commandFileCentre(reg);
   const wounded = alive.filter((s) => !s.isCommand && s.wounds > 0);
   if (wounded.length) {
@@ -400,7 +405,12 @@ export function nextWoundTarget(reg: Regiment, engaged: ReadonlySet<string> = ne
   const unengaged = rankAndFile.filter((s) => !engaged.has(s.id));
   if (unengaged.length) return alternatingEnd(reg, unengaged, cmdX);
   if (rankAndFile.length) return alternatingEnd(reg, rankAndFile, cmdX);
-  return alive[0];
+  return [alive[0]];
+}
+
+/** Next stand to take a wound, taking the left one on a tie. */
+export function nextWoundTarget(reg: Regiment, engaged: ReadonlySet<string> = new Set()): Stand | undefined {
+  return nextWoundCandidates(reg, engaged)[0];
 }
 
 export interface AllocationResult {
@@ -410,6 +420,20 @@ export interface AllocationResult {
   /** Wounds that could not be allocated (no stands left). */
   unallocated: number;
   removedIds: string[];
+  /** How many entries of `choices` were used to settle ties. */
+  choicesUsed: number;
+  /**
+   * Set when stopAtTie is on and a tie had no choice left: allocation stopped
+   * before wound number `wound` (1-based), which must go to one of `candidates`.
+   */
+  pendingTie?: { wound: number; candidates: Stand[] };
+}
+
+export interface AllocationOptions {
+  /** Stand ids picked by the player, one per tie, in order. */
+  choices?: string[];
+  /** Stop at a tie with no choice left (client planning) instead of taking the left stand. */
+  stopAtTie?: boolean;
 }
 
 /** Move a stand to the casualty list (keeping its slot so it can be restored). */
@@ -425,17 +449,37 @@ export function removeStandToCasualties(reg: Regiment, standId: string): Regimen
  * whose damage reaches woundsMax goes to the casualty list at once; otherwise
  * it stays at max (awaiting confirmation) and is skipped by later wounds.
  */
-export function allocateWounds(reg: Regiment, n: number, autoRemove = true, engaged: ReadonlySet<string> = new Set()): AllocationResult {
+export function allocateWounds(
+  reg: Regiment,
+  n: number,
+  autoRemove = true,
+  engaged: ReadonlySet<string> = new Set(),
+  opts: AllocationOptions = {},
+): AllocationResult {
+  const choices = opts.choices ?? [];
+  let used = 0;
+  let pendingTie: AllocationResult['pendingTie'];
   let r = reg;
   const order: string[] = [];
   const names = new Map<string, string>();
   const removedIds: string[] = [];
   let unallocated = 0;
   for (let i = 0; i < n; i++) {
-    const t = nextWoundTarget(r, engaged);
-    if (!t) {
+    const cands = nextWoundCandidates(r, engaged);
+    if (!cands.length) {
       unallocated = n - i;
       break;
+    }
+    let t = cands[0];
+    if (cands.length > 1) {
+      // A tie: use the player's next choice; a stale choice falls back to the left stand.
+      if (used < choices.length) {
+        t = cands.find((c) => c.id === choices[used]) ?? cands[0];
+        used++;
+      } else if (opts.stopAtTie) {
+        pendingTie = { wound: i + 1, candidates: cands };
+        break;
+      }
     }
     if (!names.has(t.id)) {
       names.set(t.id, standName(reg, t));
@@ -454,7 +498,7 @@ export function allocateWounds(reg: Regiment, n: number, autoRemove = true, enga
     const s = r.stands.find((x) => x.id === id)!;
     return s.wounds >= s.woundsMax ? `${name} ${s.wounds}/${s.woundsMax} (to remove)` : `${name} ${s.wounds}/${s.woundsMax}`;
   });
-  return { regiment: r, steps, unallocated, removedIds };
+  return { regiment: r, steps, unallocated, removedIds, choicesUsed: used, ...(pendingTie ? { pendingTie } : {}) };
 }
 
 export const totalDamage = (reg: Regiment): number =>

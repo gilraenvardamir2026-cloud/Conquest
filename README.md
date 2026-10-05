@@ -96,8 +96,14 @@ settings (⚙ = in the Settings dialog).
    3. then alternating ends of the rearmost rank, starting with the end
       farthest from the command stand, so the centremost stand goes last. The
       alternation is read from the rank itself: whichever side of the rank has
-      lost fewer stands gives the next one; on a tie, the end farther from the
-      command stand (its slot is used even after it is removed; ties left).
+      lost fewer stands gives the next one; when both sides have lost the same
+      number, the end farther from the command stand (its slot is used even
+      after it is removed). If both ends are **equally far** from the command
+      stand, the player chooses: allocation pauses, the two stands pulse in the
+      stand grid, and you pick one (button or click). Your picks travel with the
+      operation so every copy of the battle resolves the tie the same way.
+      ⚙ "Two stands equally far from the command stand" can instead always
+      take the left one.
       When the rearmost rank empties, the next rank becomes the rearmost;
    4. stands engaged with an enemy (touching an enemy stand, corners included,
       within 0.02") are kept until every unengaged stand is gone, so as few

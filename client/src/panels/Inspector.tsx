@@ -1,7 +1,8 @@
 // Right panel: context-sensitive editor for the current selection.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  allocateWounds,
   engagedStandIds,
   nextWoundTarget,
   presetFor,
@@ -23,6 +24,7 @@ import {
   type ObjectiveMarker,
   type PlayerSeat,
   type Regiment,
+  type Stand,
   type StandType,
   type Terrain,
   type Zone,
@@ -97,6 +99,21 @@ function PoseFields({ x, y, angle, onCommit }: { x: number; y: number; angle: nu
 
 function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: React.ReactNode }) {
   const [wounds, setWounds] = useState(1);
+  // A wound allocation paused at a tie: the choices made so far and the stands to pick from.
+  const [tie, setTie] = useState<{ choices: string[]; wound: number; candidates: Stand[]; steps: string[] } | null>(null);
+  useEffect(() => setTie(null), [r]);
+
+  /** Plan the allocation locally; stop at each tie to ask, then send one op carrying the choices. */
+  const applyWounds = (choices: string[]) => {
+    const ask = (b.settings.woundTies ?? 'ask') === 'ask';
+    const plan = allocateWounds(r, wounds, !b.settings.confirmStandRemoval, engagedStandIds(b, r), { choices, stopAtTie: ask });
+    if (plan.pendingTie) {
+      setTie({ choices, wound: plan.pendingTie.wound, candidates: plan.pendingTie.candidates, steps: plan.steps });
+      return;
+    }
+    setTie(null);
+    dispatch({ type: 'applyWounds', id: r.id, count: wounds, ...(choices.length ? { choices } : {}) });
+  };
   const [newTag, setNewTag] = useState('');
   const ch = r.characterId ? b.characters.find((c) => c.id === r.characterId) : undefined;
   const joinable = b.characters.filter((c) => c.owner === r.owner && !c.attachedTo && c.location !== 'destroyed');
@@ -164,11 +181,27 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
         <div className="btn-row">
           <span className="row-label">Apply wounds</span>
           <NumberField value={wounds} digits={0} step={1} min={1} max={200} width={52} onCommit={(n) => n && setWounds(n)} />
-          <button className="primary" onClick={() => dispatch({ type: 'applyWounds', id: r.id, count: wounds })}>
+          <button className="primary" disabled={!!tie} onClick={() => applyWounds([])}>
             Apply
           </button>
         </div>
-        <StandGrid reg={r} b={b} />
+        {tie && (
+          <div className="banner warn" role="alert">
+            <div>
+              Wound {tie.wound} of {wounds}: these stands are equally far from the command stand. Which one takes it?
+            </div>
+            {tie.steps.length > 0 && <div className="muted small">So far: {tie.steps.join(', ')}</div>}
+            <div className="btn-row">
+              {tie.candidates.map((c) => (
+                <button key={c.id} className="primary" onClick={() => applyWounds([...tie.choices, c.id])}>
+                  {standName(r, c)}
+                </button>
+              ))}
+              <button onClick={() => setTie(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        <StandGrid reg={r} b={b} tieIds={tie ? tie.candidates.map((c) => c.id) : undefined} onTiePick={(id) => tie && applyWounds([...tie.choices, id])} />
         {r.casualties.length > 0 && (
           <div className="casualties">
             <div className="muted small">Casualties</div>

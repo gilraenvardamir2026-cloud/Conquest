@@ -517,7 +517,8 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       if (n < 1 || n > 200) fail('Wounds must be 1–200');
       const r0 = b.regiments.find((r) => r.id === op.id) ?? fail('Regiment not found');
       const engaged = engagedStandIds(b, r0);
-      const res = allocateWounds(r0, n, !b.settings.confirmStandRemoval, engaged);
+      if (op.choices && (!Array.isArray(op.choices) || op.choices.length > 200 || op.choices.some((c) => typeof c !== 'string'))) fail('Invalid choices');
+      const res = allocateWounds(r0, n, !b.settings.confirmStandRemoval, engaged, { choices: op.choices });
       let extra = res.unallocated ? ` (${res.unallocated} not allocated: no stands left)` : '';
       if (engaged.size) extra += ` (${engaged.size} engaged stand${engaged.size === 1 ? '' : 's'} kept for last)`;
       return {

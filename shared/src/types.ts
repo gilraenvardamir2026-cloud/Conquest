@@ -189,6 +189,8 @@ export interface BattleSettings {
   standPresets: Record<Exclude<StandType, 'custom'>, StandPreset>;
   /** Ask before removing a stand whose damage reaches its wounds. */
   confirmStandRemoval: boolean;
+  /** Two stands equally far from the command stand: ask the player which takes the wound, or take the left one. */
+  woundTies: 'ask' | 'left';
   /** When a character leaves, the regiment closes the gap with a free reform (fewest ranks lost). */
   reformOnDetach: boolean;
   /** Side of the command stand an attaching character takes. */

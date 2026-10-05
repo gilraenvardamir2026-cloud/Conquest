@@ -205,6 +205,16 @@ describe('regiment ops', () => {
     expect(b.regiments[0].stands.map((s) => s.slot)).toEqual(before);
   });
 
+  it('applyWounds follows the player\'s tie choices', () => {
+    const m = militia();
+    const rearRight = m.stands.find((s) => s.slot.rank === 1 && s.slot.file === 2)!;
+    const b0 = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: m });
+    const r = applyOp(b0, env({ type: 'applyWounds', id: 'mil', count: 5, choices: [rearRight.id] }));
+    if (!r.ok) throw new Error(r.error);
+    expect(r.log.text).toBe('Player 1: Militia: 5 wounds → rear-right removed, rear-left 1/4');
+    expect(applyOp(b0, env({ type: 'applyWounds', id: 'mil', count: 1, choices: [42 as unknown as string] })).ok).toBe(false);
+  });
+
   it('engaged stands are kept for after every unengaged stand', () => {
     // Militia faces up from y = 40; an enemy stand touches the left flank of its rear-left stand only.
     const m = militia();

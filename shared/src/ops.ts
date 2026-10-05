@@ -89,7 +89,8 @@ export type Op =
   | { type: 'setCommandStand'; id: string; standId: string | null }
   | { type: 'updateStand'; id: string; standId: string; label: string | null }
   | { type: 'reformRegiment'; id: string; files: number; slots?: Record<string, Slot> }
-  | { type: 'applyWounds'; id: string; count: number }
+  /** `choices`: stand ids the player picked, one per tie between equidistant stands, in order. */
+  | { type: 'applyWounds'; id: string; count: number; choices?: string[] }
   | { type: 'adjustStandWounds'; id: string; standId: string; delta: number }
   | { type: 'removeStand'; id: string; standId: string }
   | { type: 'restoreStand'; id: string; standId: string }
