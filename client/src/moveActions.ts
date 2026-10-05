@@ -92,12 +92,12 @@ export function pinCurrent() {
   st.notify('Nothing to pin: measure something first');
 }
 
-/** L: open the line-of-sight tool, with the selected regiment or character as the acting piece. */
+/** L: open the line-of-sight tool, with the selected regiment as the acting piece. */
 export function startLos() {
   const st = useStore.getState();
   st.setTool('los');
   const sel = st.selection;
-  if (sel && (sel.kind === 'regiment' || sel.kind === 'character') && st.los.acting?.id !== sel.id) {
+  if (sel && sel.kind === 'regiment' && st.los.acting?.id !== sel.id) {
     st.setLos({ acting: { kind: sel.kind, id: sel.id }, target: st.los.target?.id === sel.id ? null : st.los.target });
   }
 }

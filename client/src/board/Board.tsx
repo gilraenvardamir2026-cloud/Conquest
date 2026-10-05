@@ -214,7 +214,7 @@ export function Board() {
   const highlight = useStore((s) => s.highlight);
   const warnIds = useMemo(() => new Set([...highlight, ...moveWarns.flatMap((w) => w.ids), ...losBlockerIds(losResult)]), [highlight, moveWarns, losResult]);
   // Facing arcs: of the LoS acting piece, else of the selected regiment / character, or of everything while A is held.
-  const arcIds = tool === 'los' ? (los.acting && los.acting.kind !== 'objective' ? [los.acting.id] : []) : selection && (selection.kind === 'regiment' || selection.kind === 'character') ? [selection.id] : [];
+  const arcIds = tool === 'los' ? (los.acting?.kind === 'regiment' ? [los.acting.id] : []) : selection && (selection.kind === 'regiment' || selection.kind === 'character') ? [selection.id] : [];
   const frames = arcFrames(eff, arcIds, showAllArcs, pieceFrame);
   const snapPoints = useMemo(() => (tool === 'ruler' ? collectSnapPoints(eff) : []), [eff, tool]);
   const px = 1 / view.scale; // one screen pixel in inches
@@ -276,13 +276,14 @@ export function Board() {
       return;
     }
     if (tool === 'los') {
-      if (sel.kind !== 'regiment' && sel.kind !== 'character' && sel.kind !== 'objective') return;
+      // Characters always belong to a regiment, so only regiments and objective markers take part.
+      if (sel.kind !== 'regiment' && sel.kind !== 'objective') return;
       e.stopPropagation();
       const party = { kind: sel.kind, id: sel.id };
       const st = useStore.getState();
       // First click (or Shift-click) picks the acting piece; the next click picks the target.
       if (!los.acting || e.shiftKey) {
-        if (sel.kind === 'objective') return notify('Objective markers cannot act; pick a regiment or character first');
+        if (sel.kind === 'objective') return notify('Objective markers cannot act; pick a regiment first');
         st.setLos({ acting: party, target: los.target?.id === sel.id ? null : los.target });
       } else if (sel.id !== los.acting.id) st.setLos({ target: party });
       return;
@@ -798,7 +799,7 @@ export function Board() {
       {!session?.aligning && tool === 'ruler' && <div className="board-hint">Drag to measure · snaps to stand corners and edge midpoints (Alt: no snap) · P pins</div>}
       {!session?.aligning && tool === 'distance' && <div className="board-hint">Click two things to see their closest distance · P pins</div>}
       {!session?.aligning && tool === 'los' && (
-        <div className="board-hint">{!los.acting ? 'Click the acting regiment' : 'Click a target (regiment, character or objective marker) · Shift-click picks a new acting regiment'}</div>
+        <div className="board-hint">{!los.acting ? 'Click the acting regiment' : 'Click a target regiment or objective marker · Shift-click picks a new acting regiment'}</div>
       )}
       {!session?.aligning && tool === 'ring' && <div className="board-hint">Click a regiment or character (Alt-click a single stand) · choose ranges in the panel · P pins</div>}
       {pointer && (

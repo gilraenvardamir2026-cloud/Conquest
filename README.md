@@ -189,8 +189,8 @@ settings (⚙ = in the Settings dialog).
     360°, and the per-regiment setting *All arcs are front* (regiment
     inspector) lifts the restriction for that regiment, also reporting its arcs
     as front when it is the target.
-24. **"On" an Obstructing piece** (so it is ignored for that line) means the
-    acting or target stand's centre is inside it.
+24. **"On" an Obstructing piece** (so it is ignored for that line) means any
+    part of the acting or target stand is on it.
 25. **Obstacle size test**: other stands and objective markers block when their
     effective size is ≥ the acting size and ≥ the target size (⚙ or ≥ the acting
     size only). Obstructing / Garrison terrain blocks every line in tournament
@@ -218,8 +218,8 @@ settings (⚙ = in the Settings dialog).
   12 scenarios plus *Custom board*, the three sample layouts (optionally with
   garrison buildings), terrain presets, *Draw polygon*, lock/clear, the board
   check, pinned measurements and free tokens.
-- **Terrain editing**: select a piece to edit its name, Size, keywords, footprint
-  and garrison fields. Drag it to move; drag the round knob to rotate (Shift:
+- **Terrain editing**: select a piece to edit its name, Size (a 1 / 3 toggle),
+  keywords, footprint and garrison fields. Drag it to move; drag the round knob to rotate (Shift:
   15° steps); for polygons drag vertices, click the small squares to add one
   and Alt-click (or right-click) a vertex to delete it.
 - **Regiments**: *+ Regiment* in a player's roster adds one to reserve. Deploy
@@ -266,7 +266,8 @@ settings (⚙ = in the Settings dialog).
 - Selecting a regiment or character shows its four arcs as faint wedges up to
   the board edge; hold **A** to see every piece's arcs.
 - **LoS (L)**: click the acting regiment (or press L with it selected), then a
-  target regiment, character or objective marker. Shift-click picks a new
+  target regiment or objective marker. Characters always belong to a
+  regiment, so they take part through it. Shift-click picks a new
   acting regiment. Choose **Sight** (charges and general LoS) or **Volley**.
 - Every tested line is drawn: green clear, red obstructed (the blocker is
   outlined), grey out of range, dotted grey outside the front arc. The panel

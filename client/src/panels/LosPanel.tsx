@@ -56,7 +56,7 @@ export function LosPanel() {
               <b>{partyName(b, los.target)}</b> {result && <span className="muted small">size {result.target.size} ({result.target.note})</span>}
             </span>
           ) : (
-            <span className="muted">click a regiment, character or objective marker</span>
+            <span className="muted">click a regiment or objective marker</span>
           )}
         </div>
         <div className="btn-row">

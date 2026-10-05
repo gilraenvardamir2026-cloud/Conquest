@@ -477,14 +477,13 @@ function TerrainInspector({ t, b, close }: { t: Terrain; b: Battle; close: React
         <Row label="Locked" title="Players lock terrain once the board is set; scenarios never lock terrain">
           <input type="checkbox" checked={locked} onChange={(e) => upd({ locked: e.target.checked })} />
         </Row>
-        <Row label="Size">
-          <select value={t.size} disabled={locked} onChange={(e) => upd({ size: Number(e.target.value) })}>
-            {[0, 1, 2, 3, 4].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+        <Row label="Size" title="The pack's Elevation (X): toggle between 1 and 3">
+          {[1, 3].map((n) => (
+            <button key={n} disabled={locked} aria-pressed={t.size === n} onClick={() => t.size !== n && upd({ size: n })}>
+              {n}
+            </button>
+          ))}
+          {t.size !== 1 && t.size !== 3 && <span className="muted small">currently {t.size}</span>}
         </Row>
         <Row label="Centre / angle">
           <NumberField value={t.x} width={52} disabled={locked} onCommit={(v) => v !== undefined && upd({ x: v })} />

@@ -275,7 +275,9 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
             : 'unlocked'
           : keys.every((k) => k === 'x' || k === 'y')
             ? `moved to (${nt.x.toFixed(1)}, ${nt.y.toFixed(1)})`
-            : `edited (${keys.join(', ')})`;
+            : keys.length === 1 && keys[0] === 'size'
+              ? `Size set to ${nt.size}`
+              : `edited (${keys.join(', ')})`;
       return { battle: out, text: `${t.name} ${what}` };
     }
     case 'removeTerrain': {

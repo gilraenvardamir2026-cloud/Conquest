@@ -6,12 +6,13 @@
 //
 // Each line is a 1 mm (0.04") wide corridor. A line is obstructed when that
 // corridor crosses the interior of an obstacle:
-//  - stands of any other regiment or character (either side) and objective
+//  - stands of any other regiment (either side, attached characters included) and objective
 //    markers (Size 2) whose effective size is ≥ the acting size and (unless
 //    the comparison setting says "acting only") ≥ the target size;
 //  - terrain with Obstructing or Garrison: in tournament mode every line that
 //    crosses it, in core mode only when its Size is ≥ those sizes;
-//    such a piece is ignored when the acting stand or the target stand is on it;
+//    such a piece is ignored when any part of the acting stand or the target
+//    stand is on it;
 //  - the acting and target pieces themselves never block.
 // Cover and Obscuring terrain crossed is flagged without changing the result.
 
@@ -37,8 +38,7 @@ import {
   type Vec,
 } from './geometry';
 import { objectiveMarkerPolygon, terrainPolygon } from './board';
-import { presetFor } from './presets';
-import { characterPolygon, regimentFrame, regimentStandGeoms, standName } from './regiment';
+import { regimentFrame, regimentStandGeoms, standName } from './regiment';
 import type { Battle, Terrain, TerrainKeyword } from './types';
 
 /** Half the 1 mm corridor width. */
@@ -47,9 +47,12 @@ export const OBJECTIVE_MARKER_LOS_SIZE = 2;
 
 export type LosMode = 'sight' | 'volley';
 
-/** A piece that can act in, or be the target of, a line-of-sight check. */
+/**
+ * A piece that can act in, or be the target of, a line-of-sight check. Characters
+ * are always part of a regiment, so they take part through their regiment.
+ */
 export interface LosParty {
-  kind: 'regiment' | 'character' | 'objective';
+  kind: 'regiment' | 'objective';
   id: string;
 }
 
@@ -80,15 +83,6 @@ export function elevatedUnder(b: Battle, centres: Vec[]): Terrain | undefined {
 export function effectiveSize(b: Battle, p: LosParty): SizeInfo | null {
   if (p.kind === 'objective') {
     return b.objectiveMarkers.some((m) => m.id === p.id) ? { size: OBJECTIVE_MARKER_LOS_SIZE, note: 'objective marker' } : null;
-  }
-  if (p.kind === 'character') {
-    const c = b.characters.find((x) => x.id === p.id);
-    if (!c) return null;
-    if (c.attachedTo) return effectiveSize(b, { kind: 'regiment', id: c.attachedTo });
-    const base = presetFor(b.settings, c.standType).size;
-    const poly = characterPolygon(c);
-    const elev = poly ? elevatedUnder(b, [centroid(poly)]) : undefined;
-    return elev ? { size: base + elev.size, note: `${c.standType} ${base}, on ${elev.name} +${elev.size}` } : { size: base, note: `${c.standType} ${base}` };
   }
   const r = b.regiments.find((x) => x.id === p.id);
   if (!r) return null;
@@ -136,20 +130,6 @@ function partyShape(b: Battle, p: LosParty): PartyShape | null {
     const m = b.objectiveMarkers.find((x) => x.id === p.id && !x.destroyed);
     if (!m) return null;
     return { name: `objective marker ${m.label ?? '•'}`, stands: [{ id: m.id, name: 'marker', poly: objectiveMarkerPolygon(m), rank: 0, file: 0 }], ownIds: new Set([m.id]) };
-  }
-  if (p.kind === 'character') {
-    const c = b.characters.find((x) => x.id === p.id);
-    if (!c || c.location !== 'board') return null;
-    if (c.attachedTo) return partyShape(b, { kind: 'regiment', id: c.attachedTo });
-    const poly = characterPolygon(c);
-    if (!poly) return null;
-    return {
-      name: c.name,
-      owner: c.owner,
-      stands: [{ id: c.id, name: c.name, poly, rank: 0, file: 0, front: [poly[0], poly[1]] }],
-      frame: { x: c.x!, y: c.y!, angle: c.angle ?? 0, w: c.standW, d: c.standD },
-      ownIds: new Set([c.id]),
-    };
   }
   const r = b.regiments.find((x) => x.id === p.id);
   if (!r || r.location !== 'board') return null;
@@ -321,7 +301,7 @@ export function lineOfSight(b: Battle, actingRef: LosParty, targetRef: LosParty,
   const obstacles: Obstacle[] = [];
   const skip = new Set([...acting.ownIds, ...target.ownIds]);
   const sizeCache = new Map<string, number>();
-  const sizeOfPiece = (kind: 'regiment' | 'character', id: string) => {
+  const sizeOfPiece = (kind: 'regiment', id: string) => {
     if (!sizeCache.has(id)) sizeCache.set(id, effectiveSize(b, { kind, id })?.size ?? 0);
     return sizeCache.get(id)!;
   };
@@ -329,11 +309,6 @@ export function lineOfSight(b: Battle, actingRef: LosParty, targetRef: LosParty,
     if (r.location !== 'board' || r.garrisonId || skip.has(r.id)) continue;
     const blocks = sizeBlocks(sizeOfPiece('regiment', r.id));
     for (const g of regimentStandGeoms(r)) obstacles.push({ kind: 'stand', id: r.id, name: r.name, pieces: [g.poly], bb: bounds(g.poly), blocks });
-  }
-  for (const c of b.characters) {
-    if (c.location !== 'board' || c.attachedTo || skip.has(c.id)) continue;
-    const poly = characterPolygon(c);
-    if (poly) obstacles.push({ kind: 'stand', id: c.id, name: c.name, pieces: [poly], bb: bounds(poly), blocks: sizeBlocks(sizeOfPiece('character', c.id)) });
   }
   for (const m of b.objectiveMarkers) {
     if (m.destroyed || skip.has(m.id)) continue;
@@ -346,11 +321,9 @@ export function lineOfSight(b: Battle, actingRef: LosParty, targetRef: LosParty,
     const blocks = isBlockingTerrain(t) && (s.losObstructing === 'tournament' || sizeBlocks(t.size));
     obstacles.push({ kind: 'terrain', id: t.id, name: t.name, pieces: convexPieces(poly), bb: bounds(poly), blocks, terrain: t });
   }
-  // Obstructing pieces the acting or target stand stands on (centre inside) are ignored for that line.
-  const on = (standPoly: Polygon) => {
-    const c = centroid(standPoly);
-    return new Set(obstacles.filter((o) => o.kind === 'terrain' && isBlockingTerrain(o.terrain!) && o.pieces.some((p) => pointInPolygon(c, p))).map((o) => o.id));
-  };
+  // Obstructing pieces that any part of the acting or target stand is on are ignored for that line.
+  const on = (standPoly: Polygon) =>
+    new Set(obstacles.filter((o) => o.kind === 'terrain' && isBlockingTerrain(o.terrain!) && o.pieces.some((p) => convexOverlapDepth(standPoly, p) > EPS)).map((o) => o.id));
 
   const testLine = (from: Vec, to: Vec, originId: string, targetStandId: string, ignore: Set<string>): LosLine => {
     const length = dist(from, to);

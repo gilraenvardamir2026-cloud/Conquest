@@ -125,6 +125,20 @@ describe('line of sight: details', () => {
     expect(lineOfSight(b2, A, T, 'sight')!.clearCount).toBe(0);
   });
 
+  it('an Obstructing piece is ignored when any part of the acting or target stand is on it', () => {
+    // Rock from y 30 to 40.5: the acting stands (y 40..42.1) overlap its edge by 0.5", centres outside.
+    const rock = rect('rock', 'Rock', 13, 35.25, 12, 10.5, 1, ['Obstructing']);
+    const a = reg('a', 'p1', 'infantry', { x: 10, y: 40, angle: 0 });
+    const t = reg('t', 'p2', 'infantry', { x: 10 + 3 * W1, y: 20, angle: 180 });
+    expect(lineOfSight(battle([a, t], [rock]), A, T, 'sight')!.clearCount).toBe(3);
+    // Moved 1" back the stands are off it, and the rock blocks again.
+    const a2 = reg('a', 'p1', 'infantry', { x: 10, y: 41, angle: 0 });
+    expect(lineOfSight(battle([a2, t], [rock]), A, T, 'sight')!.clearCount).toBe(0);
+    // The same from the target's side: its stands (y 17.9..20) reach 0.3" into a rock from y 19.7 up to 25.
+    const rock2 = rect('rock2', 'Rock', 13, 22.35, 12, 5.3, 1, ['Obstructing']);
+    expect(lineOfSight(battle([a2, t], [rock2]), A, T, 'sight')!.clearCount).toBe(3);
+  });
+
   it('an Obstructing piece blocks lines that only cross it', () => {
     const wall = rect('wall', 'Wall', 13, 30, 12, 1, 1, ['Obstructing']);
     const a = reg('a', 'p1', 'infantry', { x: 10, y: 40, angle: 0 });
