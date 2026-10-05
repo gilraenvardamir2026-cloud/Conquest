@@ -143,6 +143,7 @@ export function createBattle(opts: { id: string; name?: string; scenarioId?: str
     characters: [],
     markers: [],
     dice: [],
+    measurements: [],
     settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
     log: [],
   };
@@ -240,4 +241,20 @@ export function boardCheck(b: Battle): BoardWarning[] {
     }
   });
   return w;
+}
+
+/**
+ * Fill in fields added after a battle file was saved (older saves, imports),
+ * so every client works on the same complete shape.
+ */
+export function normalizeBattle(b: Battle): Battle {
+  return {
+    ...b,
+    seq: b.seq ?? 0,
+    measurements: b.measurements ?? [],
+    markers: b.markers ?? [],
+    dice: b.dice ?? [],
+    log: b.log ?? [],
+    settings: { ...DEFAULT_SETTINGS, ...JSON.parse(JSON.stringify(b.settings ?? {})) },
+  };
 }

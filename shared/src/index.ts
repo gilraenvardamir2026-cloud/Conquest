@@ -3,6 +3,8 @@ export * from './geometry';
 export * from './presets';
 export * from './regiment';
 export * from './board';
+export * from './movement';
+export * from './measure';
 export * from './ops';
 export * from './reducer';
 export * from './ids';

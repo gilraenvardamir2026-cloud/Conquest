@@ -7,7 +7,7 @@
 // what undo needs.
 
 import { bounds, localToWorld } from './geometry';
-import { engagedStandIds, layoutTerrain, scenarioZones, terrainPolygon, toggleGarrison } from './board';
+import { engagedStandIds, layoutTerrain, normalizeBattle, scenarioZones, terrainPolygon, toggleGarrison } from './board';
 import { scenarioById } from './presets';
 import {
   allocateWounds,
@@ -634,6 +634,28 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       return { battle: { ...b, markers: removeAt(b.markers, i) }, text: `removed marker "${b.markers[i].label}"` };
     }
 
+    // ----- Pinned measurements ------------------------------------------------
+    case 'addMeasurement': {
+      const m = op.measurement;
+      if (b.measurements.some((x) => x.id === m.id)) fail('Duplicate id');
+      if (m.kind === 'ring') {
+        finite(m.radius, 'radius');
+        if (m.radius <= 0 || m.radius > 200) fail('Radius must be between 0 and 200"');
+      }
+      if (m.kind === 'ruler') {
+        checkPose({ ...m.a, angle: 0 });
+        checkPose({ ...m.b, angle: 0 });
+      }
+      const what = m.kind === 'ruler' ? 'a ruler' : m.kind === 'distance' ? 'a distance' : `a ${m.label} range ring`;
+      return { battle: { ...b, measurements: [...b.measurements, { ...m, by: env.by }] }, text: `pinned ${what}` };
+    }
+    case 'removeMeasurement': {
+      const i = idx(b.measurements, op.id, 'Measurement');
+      return { battle: { ...b, measurements: removeAt(b.measurements, i) }, text: 'removed a pinned measurement' };
+    }
+    case 'clearMeasurements':
+      return { battle: { ...b, measurements: [] }, text: 'cleared pinned measurements' };
+
     // ----- Misc ----------------------------------------------------------------
     case 'chat':
       if (!op.text.trim()) fail('Empty message');
@@ -659,7 +681,7 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       return { battle: out, text: `undid: ${op.label.slice(0, 200)}` };
     }
     case 'replaceBattle': {
-      const nb = op.battle;
+      const nb = normalizeBattle(op.battle);
       return { battle: { ...nb, id: b.id, seq: b.seq, log: b.log }, text: `loaded battle "${nb.name}"` };
     }
   }

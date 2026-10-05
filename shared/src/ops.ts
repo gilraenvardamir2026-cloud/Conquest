@@ -10,6 +10,7 @@ import type {
   Character,
   FreeMarker,
   Location,
+  Measurement,
   ObjectiveMarker,
   PlayerInfo,
   PlayerSeat,
@@ -44,8 +45,8 @@ export type TerrainPatch = Patch<Pick<Terrain, 'name' | 'shape' | 'x' | 'y' | 'a
 export type ZonePatch = Patch<Pick<Zone, 'label' | 'x' | 'y' | 'diameter' | 'friendlyTo'>>;
 export type ObjectiveMarkerPatch = Patch<Pick<ObjectiveMarker, 'label' | 'x' | 'y' | 'friendlyTo' | 'woundsMax'>>;
 
-export type Collection = 'regiments' | 'characters' | 'terrain' | 'zones' | 'objectiveMarkers' | 'markers';
-export const COLLECTIONS: Collection[] = ['regiments', 'characters', 'terrain', 'zones', 'objectiveMarkers', 'markers'];
+export type Collection = 'regiments' | 'characters' | 'terrain' | 'zones' | 'objectiveMarkers' | 'markers' | 'measurements';
+export const COLLECTIONS: Collection[] = ['regiments', 'characters', 'terrain', 'zones', 'objectiveMarkers', 'markers', 'measurements'];
 export type DocField = 'board' | 'settings' | 'players' | 'name';
 export const DOC_FIELDS: DocField[] = ['board', 'settings', 'players', 'name'];
 
@@ -107,6 +108,10 @@ export type Op =
   | { type: 'addMarker'; marker: FreeMarker }
   | { type: 'updateMarker'; id: string; patch: Partial<Pick<FreeMarker, 'label' | 'x' | 'y'>> }
   | { type: 'removeMarker'; id: string }
+  // Pinned measurements
+  | { type: 'addMeasurement'; measurement: Measurement }
+  | { type: 'removeMeasurement'; id: string }
+  | { type: 'clearMeasurements' }
   // Misc
   | { type: 'chat'; text: string }
   | { type: 'restore'; label: string; entries: RestoreEntry[] }

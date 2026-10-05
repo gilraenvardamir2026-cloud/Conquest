@@ -178,6 +178,20 @@ export interface DiceRoll {
   source: 'random.org' | 'local';
 }
 
+/** Something on the board that can be measured from or to. */
+export interface EntityRef {
+  kind: 'regiment' | 'character' | 'terrain' | 'objective' | 'zone';
+  id: string;
+  /** Measure from a single stand of a regiment. */
+  standId?: string;
+}
+
+/** A pinned measurement, shown to both players until cleared. */
+export type Measurement =
+  | { id: string; kind: 'ruler'; by: Author; a: { x: number; y: number }; b: { x: number; y: number } }
+  | { id: string; kind: 'distance'; by: Author; a: EntityRef; b: EntityRef }
+  | { id: string; kind: 'ring'; by: Author; ref: EntityRef; radius: number; label: string };
+
 export interface StandPreset {
   w: number;
   d: number;
@@ -233,6 +247,8 @@ export interface Battle {
   /** Free tokens, e.g. reinforcement line ends. */
   markers: FreeMarker[];
   dice: DiceRoll[];
+  /** Pinned rulers, distances and range rings. */
+  measurements: Measurement[];
   settings: BattleSettings;
   log: LogEntry[];
 }
