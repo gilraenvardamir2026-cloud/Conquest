@@ -6,6 +6,7 @@ import { LogPanel } from './panels/LogPanel';
 import { Roster } from './panels/Roster';
 import { Toolbar } from './panels/Toolbar';
 import { useStore } from './store';
+import { applyAlign, movableFromSelection, nudge, pinCurrent, refFromSelection, startMoveForSelection } from './moveActions';
 
 export function App() {
   const showHelp = useStore((s) => s.showHelp);
@@ -22,17 +23,59 @@ export function App() {
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const m = st.moveSession;
+      const step = e.shiftKey ? 1 : 0.1;
+      const turn = e.shiftKey ? 15 : 1;
+      // Movement keys: along the piece's own axes, starting a move session if needed.
+      if (m || movableFromSelection(st.selection)) {
+        const k = e.key;
+        if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight') {
+          e.preventDefault();
+          if (k === 'ArrowUp') nudge('forward', step);
+          else if (k === 'ArrowDown') nudge('forward', -step);
+          else if (k === 'ArrowLeft') nudge('sideways', -step);
+          else nudge('sideways', step);
+          return;
+        }
+        if (k === 'q' || k === 'Q') return nudge('rotate', -turn);
+        if (k === 'e' || k === 'E') return nudge('rotate', turn);
+      }
+      if (e.key === 'Enter') {
+        if (m?.align) applyAlign();
+        else if (m) st.commitMove();
+        return;
+      }
+      if (e.key === 'Backspace' && m && st.tool === 'select') {
+        e.preventDefault();
+        st.popSegment();
+        return;
+      }
       if (e.key === '?') st.setShowHelp(!st.showHelp);
       else if (e.key === 'Escape') {
         if (st.showHelp) st.setShowHelp(false);
         else if (st.showSettings) st.setShowSettings(false);
+        else if (m?.align) st.setAlign(null);
+        else if (m?.aligning) st.setAligning(false);
+        else if (m) st.cancelMove();
         else if (st.tool !== 'select') st.setTool('select');
-        else st.select(null);
+        else {
+          st.select(null);
+          st.setMeasure({ pair: [] });
+        }
       } else if (e.key === 'v' || e.key === 'V') st.setTool('select');
+      else if (e.key === 'm' || e.key === 'M') startMoveForSelection();
+      else if (e.key === 'r' || e.key === 'R') st.setTool('ruler');
+      else if (e.key === 'd' || e.key === 'D') st.setTool('distance');
+      else if (e.key === 'g' || e.key === 'G') {
+        st.setTool('ring');
+        const ref = refFromSelection(st.selection);
+        if (ref && (ref.kind === 'regiment' || ref.kind === 'character')) st.setRing({ ref });
+      } else if (e.key === 'p' || e.key === 'P') pinCurrent();
       else if (e.key === 't' || e.key === 'T') st.setTool('drawTerrain');
       else if (e.key === 'f' || e.key === 'F') st.zoomToFit();
       else if (e.key === 'Delete') {
         const sel = st.selection;
+        if (m) st.cancelMove();
         if (sel?.kind === 'regiment') {
           const r = st.battle.regiments.find((x) => x.id === sel.id);
           if (r && r.location !== 'reserve' && confirm(`Send ${r.name} to reserve?`)) st.dispatch({ type: 'setRegimentLocation', id: r.id, location: 'reserve' });

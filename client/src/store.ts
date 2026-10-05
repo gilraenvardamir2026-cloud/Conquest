@@ -1,19 +1,33 @@
 // Single client store (Zustand). Holds the battle document plus local UI state.
 // Every change to the battle goes through dispatch(op), which runs the shared
-// reducer. In milestone 1 there is no server: the document is autosaved to
+// reducer. Until the server arrives (milestone 4) the document is autosaved to
 // localStorage and the "acting seat" is switched by hand.
+//
+// A move session lives here too: segments accumulate locally and the whole
+// move is committed as a single operation.
 
 import { create } from 'zustand';
 import {
   applyOp,
   boardCheck,
   createBattle,
+  describeMove,
   makeId,
+  mergeSegments,
+  normalizeBattle,
+  pieceAt,
+  type AlignMode,
   type Battle,
   type BoardWarning,
+  type EntityRef,
+  type Facing,
+  type MoveSegment,
+  type MovingPiece,
   type Op,
   type OpEnvelope,
   type PlayerSeat,
+  type Pose,
+  type Vec,
 } from '@conquest/shared';
 
 export type SelectionKind = 'regiment' | 'character' | 'terrain' | 'zone' | 'objective' | 'marker';
@@ -22,7 +36,51 @@ export interface Selection {
   id: string;
 }
 
-export type Tool = 'select' | 'drawTerrain' | 'placeZone' | 'placeObjective';
+export type Tool = 'select' | 'ruler' | 'distance' | 'ring' | 'drawTerrain' | 'placeZone' | 'placeObjective';
+
+/**
+ * A move in progress. Nothing is sent until it is committed: then the whole
+ * session becomes one moveRegiment / moveCharacter operation.
+ */
+export interface MoveSession {
+  piece: MovingPiece;
+  start: Pose;
+  segments: MoveSegment[];
+  /** Segment being dragged right now (not yet added). */
+  live: MoveSegment | null;
+  /** Waiting for a click on an enemy facing. */
+  aligning: boolean;
+  /** Align-to-target preview awaiting confirmation. */
+  align: { targetId: string; facing: Facing; mode: AlignMode } | null;
+}
+
+export interface RingOptions {
+  ref: EntityRef | null;
+  march: boolean;
+  barrage: boolean;
+  halfBarrage: boolean;
+  custom: number | null;
+}
+
+export interface MeasureState {
+  ruler: { a: Vec; b: Vec } | null;
+  /** Up to two things for the closest-distance read-out. */
+  pair: EntityRef[];
+  ring: RingOptions;
+}
+
+/** Current pose of a move session (live drag, else last segment, else start). */
+export function sessionPose(m: MoveSession): Pose {
+  return m.live?.to ?? m.segments[m.segments.length - 1]?.to ?? m.start;
+}
+
+/** The battle as it looks with the move session applied (for drawing and live checks). */
+export function withSession(b: Battle, m: MoveSession | null): Battle {
+  if (!m) return b;
+  const pose = sessionPose(m);
+  if (m.piece.kind === 'regiment') return { ...b, regiments: b.regiments.map((r) => (r.id === m.piece.id ? { ...r, ...pose } : r)) };
+  return { ...b, characters: b.characters.map((c) => (c.id === m.piece.id ? { ...c, ...pose } : c)) };
+}
 
 /** Camera: board point at the viewport centre and zoom in pixels per inch. */
 export interface View {
@@ -61,6 +119,8 @@ export interface AppState {
   highlight: string[];
   /** Last board check result (null = not run since the last change of scenario/terrain). */
   checkResult: BoardWarning[] | null;
+  moveSession: MoveSession | null;
+  measure: MeasureState;
 
   dispatch: (op: Op) => boolean;
   undo: () => void;
@@ -79,6 +139,18 @@ export interface AppState {
   setShowSettings: (v: boolean) => void;
   setHighlight: (ids: string[]) => void;
   setCheckResult: (w: BoardWarning[] | null) => void;
+
+  startMove: (piece: MovingPiece) => boolean;
+  setLive: (seg: MoveSegment | null) => void;
+  /** Add a segment; with merge, fold it into the previous one when of the same kind (keyboard nudges). */
+  addSegment: (seg: MoveSegment, merge?: boolean) => void;
+  popSegment: () => void;
+  setAligning: (v: boolean) => void;
+  setAlign: (a: MoveSession['align']) => void;
+  commitMove: () => void;
+  cancelMove: () => void;
+  setMeasure: (m: Partial<MeasureState>) => void;
+  setRing: (r: Partial<RingOptions>) => void;
 }
 
 const STORAGE_KEY = 'conquest.local.battle.v1';
@@ -88,7 +160,7 @@ function loadSaved(): Battle | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const b = JSON.parse(raw) as Battle;
-    return b && b.board && Array.isArray(b.regiments) ? b : null;
+    return b && b.board && Array.isArray(b.regiments) ? normalizeBattle(b) : null;
   } catch {
     return null;
   }
@@ -119,6 +191,8 @@ export const useStore = create<AppState>((set, get) => ({
   showSettings: false,
   highlight: [],
   checkResult: null,
+  moveSession: null,
+  measure: { ruler: null, pair: [], ring: { ref: null, march: true, barrage: false, halfBarrage: false, custom: null } },
 
   dispatch: (op) => commit(op, true) !== null,
 
@@ -166,17 +240,64 @@ export const useStore = create<AppState>((set, get) => ({
     })),
   notify: (text, kind = 'info') => set({ toast: { text, kind, at: Date.now() } }),
   newBattle: (scenarioId, layoutId) => {
-    set({ battle: createBattle({ id: makeId(), scenarioId, layoutId }), selection: null, undoStack: [], history: [], checkResult: null, highlight: [] });
+    set({ battle: createBattle({ id: makeId(), scenarioId, layoutId }), selection: null, undoStack: [], history: [], checkResult: null, highlight: [], moveSession: null });
     get().zoomToFit();
   },
   loadBattle: (b) => {
-    set({ battle: b, selection: null, undoStack: [], history: [], checkResult: null, highlight: [] });
+    set({ battle: normalizeBattle(b), selection: null, undoStack: [], history: [], checkResult: null, highlight: [], moveSession: null });
     get().zoomToFit();
   },
   setShowHelp: (showHelp) => set({ showHelp }),
   setShowSettings: (showSettings) => set({ showSettings }),
   setHighlight: (highlight) => set({ highlight }),
   setCheckResult: (checkResult) => set({ checkResult, highlight: checkResult ? [...new Set(checkResult.flatMap((w) => w.ids))] : [] }),
+
+  startMove: (piece) => {
+    const cur = get().moveSession;
+    if (cur && cur.piece.id === piece.id) return true;
+    if (cur) get().commitMove();
+    const b = get().battle;
+    const p =
+      piece.kind === 'regiment'
+        ? b.regiments.find((r) => r.id === piece.id && r.location === 'board' && !r.garrisonId)
+        : b.characters.find((c) => c.id === piece.id && c.location === 'board' && !c.attachedTo && c.x !== undefined);
+    if (!p) {
+      get().notify('Only pieces on the board can move');
+      return false;
+    }
+    const start = { x: p.x!, y: p.y!, angle: p.angle ?? 0 };
+    set({ moveSession: { piece, start, segments: [], live: null, aligning: false, align: null }, selection: { kind: piece.kind, id: piece.id } });
+    return true;
+  },
+  setLive: (live) => set((s) => (s.moveSession ? { moveSession: { ...s.moveSession, live } } : {})),
+  addSegment: (seg, merge = false) =>
+    set((s) => {
+      const m = s.moveSession;
+      if (!m) return {};
+      const prev = m.segments[m.segments.length - 1];
+      const box = pieceAt(s.battle, m.piece, m.start)?.box;
+      const merged = merge && prev && box ? mergeSegments(prev, seg, box) : null;
+      const segments = merged ? [...m.segments.slice(0, -1), merged] : [...m.segments, seg];
+      // A nudge that cancels out leaves no segment behind.
+      const cleaned = segments.filter((x) => x.distance > 1e-9 || Math.abs(x.value) > 1e-9);
+      return { moveSession: { ...m, segments: cleaned, live: null, align: null } };
+    }),
+  popSegment: () => set((s) => (s.moveSession ? { moveSession: { ...s.moveSession, segments: s.moveSession.segments.slice(0, -1), live: null } } : {})),
+  setAligning: (aligning) => set((s) => (s.moveSession ? { moveSession: { ...s.moveSession, aligning, align: aligning ? null : s.moveSession.align } } : {})),
+  setAlign: (align) => set((s) => (s.moveSession ? { moveSession: { ...s.moveSession, align, aligning: false } } : {})),
+  commitMove: () => {
+    const m = get().moveSession;
+    if (!m) return;
+    set({ moveSession: null });
+    if (!m.segments.length) return;
+    const pose = m.segments[m.segments.length - 1].to;
+    const summary = describeMove(m.segments);
+    if (m.piece.kind === 'regiment') get().dispatch({ type: 'moveRegiment', id: m.piece.id, pose, summary });
+    else get().dispatch({ type: 'moveCharacter', id: m.piece.id, pose, summary });
+  },
+  cancelMove: () => set({ moveSession: null }),
+  setMeasure: (m) => set((s) => ({ measure: { ...s.measure, ...m } })),
+  setRing: (r) => set((s) => ({ measure: { ...s.measure, ring: { ...s.measure.ring, ...r } } })),
 }));
 
 /** Run an op through the reducer; record its inverse for undo unless it is itself an undo. */
@@ -203,6 +324,15 @@ function commit(op: Op, recordUndo: boolean): number | null {
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
   if (s.battle === prev.battle) return;
+  // A move session whose piece left the board (deleted, sent to reserve, undone…) ends.
+  const m = s.moveSession;
+  if (m) {
+    const ok =
+      m.piece.kind === 'regiment'
+        ? s.battle.regiments.some((r) => r.id === m.piece.id && r.location === 'board' && !r.garrisonId)
+        : s.battle.characters.some((c) => c.id === m.piece.id && c.location === 'board' && !c.attachedTo);
+    if (!ok) useStore.setState({ moveSession: null });
+  }
   // Keep a board check that has been run up to date as terrain and zones change.
   if (s.checkResult && (s.battle.terrain !== prev.battle.terrain || s.battle.zones !== prev.battle.zones)) {
     s.setCheckResult(boardCheck(s.battle));
@@ -219,3 +349,6 @@ useStore.subscribe((s, prev) => {
 
 /** Convenience for components. */
 export const dispatch = (op: Op) => useStore.getState().dispatch(op);
+
+// Handy for debugging and browser tests: the store is reachable from the console.
+(globalThis as unknown as { conquestStore?: typeof useStore }).conquestStore = useStore;

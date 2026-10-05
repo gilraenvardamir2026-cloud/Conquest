@@ -14,7 +14,7 @@ import {
   type Terrain,
   type Zone,
 } from '@conquest/shared';
-import { GRID_STROKE, KEYWORD_PATTERN, NEUTRAL_TINT, SELECT_STROKE, seatColor, seatTag, terrainBaseFill, terrainTag } from './theme';
+import { GRID_STROKE, KEYWORD_PATTERN, NEUTRAL_TINT, SELECT_STROKE, seatColor, seatTag, terrainBaseFill, terrainTag, WARN_STROKE } from './theme';
 
 export type DownHandler = (e: RPointerEvent<SVGElement>) => void;
 
@@ -180,6 +180,7 @@ export function ObjectiveShape(props: {
   fs: number;
   flip: boolean;
   selected: boolean;
+  warn?: boolean;
   offset?: { x: number; y: number };
   onDown: DownHandler;
   hover: HoverHandlers;
@@ -199,8 +200,8 @@ export function ObjectiveShape(props: {
         width={s}
         height={s}
         fill={tint}
-        stroke={props.selected ? SELECT_STROKE : ready ? '#b00' : '#222'}
-        strokeWidth={props.selected || ready ? 0.16 : 0.08}
+        stroke={props.selected ? SELECT_STROKE : ready || props.warn ? WARN_STROKE : '#222'}
+        strokeWidth={props.selected || ready || props.warn ? 0.16 : 0.08}
       />
       {m.label ? (
         <Txt x={x} y={y} fs={Math.min(s * 0.55, Math.max(fs, 0.8))} flip={flip} weight={800} fill="#fff" halo="rgba(0,0,0,0.6)">
@@ -274,6 +275,7 @@ export function RegimentShape(props: {
   fs: number;
   flip: boolean;
   selected: boolean;
+  warn?: boolean;
   offset?: { x: number; y: number };
   onDown: DownHandler;
   hover: HoverHandlers;
@@ -297,6 +299,7 @@ export function RegimentShape(props: {
           return (
             <rect
               key={s.id}
+              data-stand-id={s.id}
               x={s.slot.file * W}
               y={s.slot.rank * D}
               width={W}
@@ -326,6 +329,7 @@ export function RegimentShape(props: {
         {props.selected && (
           <rect x={box.u0 - 0.12} y={-0.12} width={box.u1 - box.u0 + 0.24} height={box.v1 + 0.24} fill="none" stroke={SELECT_STROKE} strokeWidth={0.12} strokeDasharray="0.4 0.2" />
         )}
+        {props.warn && <rect x={box.u0 - 0.25} y={-0.25} width={box.u1 - box.u0 + 0.5} height={box.v1 + 0.5} fill="none" stroke={WARN_STROKE} strokeWidth={0.12} />}
       </g>
       {reg.stands.map((s) => {
         const t = standText(s);
@@ -367,6 +371,7 @@ export function CharacterShape(props: {
   fs: number;
   flip: boolean;
   selected: boolean;
+  warn?: boolean;
   offset?: { x: number; y: number };
   onDown: DownHandler;
   hover: HoverHandlers;
@@ -390,6 +395,7 @@ export function CharacterShape(props: {
         {props.selected && (
           <rect x={-0.12} y={-0.12} width={W + 0.24} height={D + 0.24} fill="none" stroke={SELECT_STROKE} strokeWidth={0.12} strokeDasharray="0.4 0.2" />
         )}
+        {props.warn && <rect x={-0.25} y={-0.25} width={W + 0.5} height={D + 0.5} fill="none" stroke={WARN_STROKE} strokeWidth={0.12} />}
       </g>
       {ch.wounds > 0 && (
         <Txt x={c.x} y={c.y} fs={Math.min(fs, W * 0.3)} flip={flip} weight={700} fill="#fff" halo="rgba(0,0,0,0.55)">

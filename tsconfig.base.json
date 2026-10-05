@@ -6,6 +6,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": false,
     "noImplicitOverride": true,
+    "noUnusedLocals": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

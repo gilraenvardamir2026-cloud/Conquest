@@ -7,7 +7,7 @@
 // what undo needs.
 
 import { bounds, localToWorld } from './geometry';
-import { engagedStandIds, layoutTerrain, normalizeBattle, scenarioZones, terrainPolygon, toggleGarrison } from './board';
+import { engagedStandIds, layoutTerrain, normalizeBattle, scenarioZones, terrainPolygon } from './board';
 import { scenarioById } from './presets';
 import {
   allocateWounds,
@@ -646,7 +646,7 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
         checkPose({ ...m.a, angle: 0 });
         checkPose({ ...m.b, angle: 0 });
       }
-      const what = m.kind === 'ruler' ? 'a ruler' : m.kind === 'distance' ? 'a distance' : `a ${m.label} range ring`;
+      const what = m.kind === 'ruler' ? 'a ruler' : m.kind === 'distance' ? 'a distance' : `a range ring (${m.label} ${(Math.round(m.radius * 10) / 10).toFixed(1)}")`;
       return { battle: { ...b, measurements: [...b.measurements, { ...m, by: env.by }] }, text: `pinned ${what}` };
     }
     case 'removeMeasurement': {

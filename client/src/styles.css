@@ -233,7 +233,7 @@ textarea {
 }
 .board-hint {
   position: absolute;
-  top: 8px;
+  bottom: 30px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(30, 28, 24, 0.85);
@@ -656,4 +656,63 @@ button.unit {
 }
 .toast.error {
   background: var(--danger);
+}
+
+/* Move session and measuring */
+.handle.move {
+  fill: var(--select);
+  stroke: #000;
+  stroke-width: 0.04;
+  cursor: grab;
+}
+.handle.wheel {
+  fill: #fff;
+  stroke: #000;
+  stroke-width: 0.06;
+  cursor: grab;
+}
+.handle-hit.rotate {
+  cursor: alias;
+}
+.segments {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.segments td {
+  padding: 2px 0;
+}
+.segments .num-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+.segments tr.live td {
+  font-style: italic;
+  color: var(--muted);
+}
+.segments tr.warn td,
+.segments tr.over td {
+  color: var(--danger);
+  font-weight: 600;
+}
+.segments tfoot td {
+  border-top: 1px solid var(--line);
+  font-weight: 700;
+}
+.warn-chip {
+  background: #fdecea;
+  border: 1px solid #e6a39b;
+  color: #7a1c12;
+  border-radius: 12px;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+.reading {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0;
+}
+.grow {
+  flex: 1;
 }

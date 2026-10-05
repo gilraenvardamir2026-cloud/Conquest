@@ -34,10 +34,16 @@ import { LengthField, NotesField, NumberField, Row, Section, TextField } from '.
 import { deployCharacter, deployRegiment, duplicateRegiment, duplicateTerrain } from './actions';
 import { BoardPanel } from './BoardPanel';
 import { StandGrid } from './StandGrid';
+import { MeasurePanel } from './MeasurePanel';
+import { MovePanel } from './MovePanel';
 
 export function Inspector() {
   const battle = useStore((s) => s.battle);
   const selection = useStore((s) => s.selection);
+  const moving = useStore((s) => !!s.moveSession);
+  const tool = useStore((s) => s.tool);
+  if (moving) return <MovePanel />;
+  if (tool === 'ruler' || tool === 'distance' || tool === 'ring') return <MeasurePanel />;
   if (!selection) return <BoardPanel />;
   const close = (
     <button className="icon" title="Close (Esc)" onClick={() => useStore.getState().select(null)}>

@@ -179,7 +179,7 @@ export function maxCornerDisplacement(a: Pose, b: Pose, box: PieceBox): number {
 
 export function freeSegment(from: Pose, to: Pose, box: PieceBox): MoveSegment {
   const d = maxCornerDisplacement(from, to, box);
-  return { kind: 'free', from, to: roundPose(to), distance: d, value: d, label: `free ${fmtIn(d)}` };
+  return { kind: 'free', from, to: roundPose(to), distance: d, value: d, label: `free drag ${fmtIn(d)}` };
 }
 
 export function alignSegment(from: Pose, to: Pose, box: PieceBox, target: string): MoveSegment {

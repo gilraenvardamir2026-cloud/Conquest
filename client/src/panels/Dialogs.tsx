@@ -110,8 +110,13 @@ export function HelpOverlay() {
           <tbody>
             <tr><td>Scroll</td><td>Zoom around the cursor</td></tr>
             <tr><td>Drag empty space · Space + drag · middle button</td><td>Pan</td></tr>
-            <tr><td>Click</td><td>Select (Esc clears)</td></tr>
-            <tr><td>Drag a piece</td><td>Free move; the distance shows while dragging and goes to the log</td></tr>
+            <tr><td>Click</td><td>Select (Esc clears) · Ctrl-click a second thing: closest distance</td></tr>
+            <tr><td>M, or drag a regiment / character</td><td>Start a move. A ghost stays at the start; every segment is listed with the running total</td></tr>
+            <tr><td>Move handles</td><td>Front arrow: forward/back · side arrows: sideways · front corners: wheel · dashed ring: rotate about the centre · body: free drag (Shift: along the facing)</td></tr>
+            <tr><td>Arrow keys · Q / E</td><td>Nudge 0.1" (Shift 1") along its own axes · rotate 1° (Shift 15°)</td></tr>
+            <tr><td>Enter · Esc · Backspace</td><td>Commit the move as one log entry · revert it · drop the last segment</td></tr>
+            <tr><td>R · D · G</td><td>Ruler (snaps to corners and edge midpoints) · closest distance · range rings</td></tr>
+            <tr><td>P</td><td>Pin the current ruler, distance or rings for both players</td></tr>
             <tr><td>Drag a character onto a friendly regiment</td><td>Join it</td></tr>
             <tr><td>Drag a reserve row onto the board</td><td>Deploy it there</td></tr>
             <tr><td>Selected terrain</td><td>Round knob rotates (Shift: 15°); polygon vertices drag; squares add a vertex; Alt-click deletes one</td></tr>
@@ -131,7 +136,7 @@ export function HelpOverlay() {
           ))}
         </p>
         <p className="muted small">
-          This is a virtual tabletop, not a rules engine: it moves pieces and measures in inches. Players apply the rules. Movement tools, measuring, line of sight, multiplayer and dice arrive in later milestones.
+          This is a virtual tabletop, not a rules engine: it moves pieces and measures in inches. Players apply the rules. Warnings never block a move. Line of sight, multiplayer and dice arrive in later milestones.
         </p>
         <div className="btn-row end">
           <button className="primary" onClick={close}>

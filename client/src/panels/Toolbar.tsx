@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { SAMPLE_LAYOUTS, SCENARIOS, type Battle } from '@conquest/shared';
 import { useStore, type Tool } from '../store';
 import { downloadJson } from './actions';
+import { startMoveForSelection } from '../moveActions';
 
 export function Toolbar() {
   const tool = useStore((s) => s.tool);
@@ -12,6 +13,7 @@ export function Toolbar() {
   const custom = useStore((s) => !s.battle.board.scenarioId);
   const players = useStore((s) => s.battle.players);
   const flip = useStore((s) => s.flip);
+  const moving = useStore((s) => !!s.moveSession);
   const st = useStore.getState();
   const fileRef = useRef<HTMLInputElement>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -26,7 +28,13 @@ export function Toolbar() {
     <div className="toolbar">
       <span className="brand">Conquest Tabletop</span>
       <div className="tb-group">
-        {toolBtn('select', 'Select / Move', 'V')}
+        {toolBtn('select', 'Select', 'V')}
+        <button className={moving ? 'on' : ''} aria-pressed={moving} onClick={() => startMoveForSelection()} title="Move the selected regiment or character (M)">
+          Move
+        </button>
+        {toolBtn('ruler', 'Ruler', 'R')}
+        {toolBtn('distance', 'Distance', 'D')}
+        {toolBtn('ring', 'Range ring', 'G')}
         {toolBtn('drawTerrain', 'Draw terrain', 'T')}
         {toolBtn('placeZone', 'Place zone', '—', !custom, custom ? 'Place an objective zone' : 'Custom board only (scenario objectives are locked)')}
         {toolBtn('placeObjective', 'Place marker', '—', !custom, custom ? 'Place an objective marker' : 'Custom board only (scenario objectives are locked)')}

@@ -11,6 +11,7 @@ import {
 export const BOARD_FILL = '#e8e3d3';
 export const GRID_STROKE = '#8c8270';
 export const SELECT_STROKE = '#f2b705';
+export const WARN_STROKE = '#d32f2f';
 export const NEUTRAL_TINT = '#c8a96e';
 
 export const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));

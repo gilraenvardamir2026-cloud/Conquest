@@ -1,18 +1,41 @@
 // The battlefield: an SVG whose viewBox is in inches. Handles zoom (wheel,
 // around the cursor), pan (drag empty space, Space+drag or middle button),
-// selection, free dragging of pieces, terrain vertex editing / rotation,
-// drawing new terrain and dropping reserve units from the roster.
+// selection, move sessions (body drag and handles), terrain vertex editing /
+// rotation, the measuring tools, drawing terrain and dropping reserve units.
 //
-// Full move sessions with handles and measured segments come in milestone 2;
-// a free drag here commits one move operation and reports its distance.
+// Everything is drawn from the battle with the move in progress applied, so
+// contacts, distances and rings follow the moving piece live.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import {
+  boxCentre,
   centroid,
   dist,
+  dot,
+  dragAngle,
   fmtIn,
+  facingVec,
+  forwardSegment,
+  freeSegment,
+  localToWorld,
   makeId,
+  moveWarnings,
+  nearestFacing,
   normAngle,
+  pieceAt,
+  polygonDistance,
+  regimentFrame,
+  regimentStandGeoms,
+  rightVec,
+  rotateSegment,
+  sidewaysSegment,
+  wheelSegment,
+  boxCorners,
+  characterPolygon,
+  objectiveMarkerPolygon,
+  type Facing,
+  type MovingPiece,
+  type Pose,
   occupiedZoneIds,
   OBJECTIVE_MARKER_SIDE,
   OBJECTIVE_MARKER_WOUNDS,
@@ -28,15 +51,22 @@ import {
   type Terrain,
   type Vec,
 } from '@conquest/shared';
-import { useStore, type Selection } from '../store';
+import { sessionPose, useStore, withSession, type Selection } from '../store';
+import { movableFromSelection, refFromSelection } from '../moveActions';
+import { AlignPreview, Ghost, MoveHandles, type HandleKind } from './MoveOverlay';
+import { ContactLayer, DistanceLine, PinnedMeasurement, RangeRing, ringRadii, RulerLine } from './Overlays';
 import { BoardLayer, CharacterShape, Defs, FreeMarkerShape, ObjectiveShape, RegimentShape, TerrainShape, Txt, ZoneShape } from './Shapes';
 import { labelSize, poseCentredAt, SELECT_STROKE, seatFacing } from './theme';
 
 type Drag =
   | { type: 'pan'; sx: number; sy: number; cx: number; cy: number; moved: boolean }
   | { type: 'entity'; sel: Selection; start: Vec; cur: Vec; moved: boolean; locked: boolean }
+  /** Body drag of a regiment or character: a free move segment (Shift: along the facing). */
+  | { type: 'piece'; piece: MovingPiece; start: Vec; base: Pose; moved: boolean }
+  | { type: 'handle'; kind: HandleKind; start: Vec; base: Pose }
   | { type: 'vertex'; terrainId: string; index: number; cur: Vec }
-  | { type: 'rotate'; terrainId: string; angle: number };
+  | { type: 'rotate'; terrainId: string; angle: number }
+  | { type: 'ruler' };
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -47,7 +77,10 @@ export function Board() {
   const flip = useStore((s) => s.flip);
   const tool = useStore((s) => s.tool);
   const selection = useStore((s) => s.selection);
+  const session = useStore((s) => s.moveSession);
+  const measure = useStore((s) => s.measure);
   const { select, setView, setViewport, dispatch, setTool, notify } = useStore.getState();
+  const [alignHover, setAlignHover] = useState<{ targetId: string; facing: Facing } | null>(null);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -157,9 +190,30 @@ export function Board() {
   };
 
   // --- derived ----------------------------------------------------------------
-  const occupied = useMemo(() => occupiedZoneIds(battle), [battle]);
+  // The battle as drawn: with the move in progress applied.
+  const eff = useMemo(() => withSession(battle, session), [battle, session]);
+  const occupied = useMemo(() => occupiedZoneIds(eff), [eff]);
+  const moving = session ? pieceAt(battle, session.piece, sessionPose(session)) : null;
+  const moveWarns = useMemo(
+    () => (session ? moveWarnings(battle, session.piece, sessionPose(session), [...session.segments, ...(session.live ? [session.live] : [])]) : []),
+    [battle, session],
+  );
   const highlight = useStore((s) => s.highlight);
-  const warnIds = useMemo(() => new Set(highlight), [highlight]);
+  const warnIds = useMemo(() => new Set([...highlight, ...moveWarns.flatMap((w) => w.ids)]), [highlight, moveWarns]);
+  const snapPoints = useMemo(() => (tool === 'ruler' ? collectSnapPoints(eff) : []), [eff, tool]);
+  const px = 1 / view.scale; // one screen pixel in inches
+  const snap = (p: Vec): Vec => {
+    let best = p;
+    let bd = 10 * px;
+    for (const q of snapPoints) {
+      const d = dist(p, q);
+      if (d < bd) {
+        bd = d;
+        best = q;
+      }
+    }
+    return best;
+  };
 
   const offsetFor = (sel: Selection) =>
     drag?.type === 'entity' && drag.moved && !drag.locked && drag.sel.kind === sel.kind && drag.sel.id === sel.id
@@ -184,13 +238,80 @@ export function Board() {
     }
   };
 
+  /** Enemy regiment facing under / near the pointer while picking an Align target. */
+  const findAlignTarget = (p: Vec): { targetId: string; facing: Facing } | null => {
+    if (!session) return null;
+    const owner = moving?.owner;
+    let best: { targetId: string; facing: Facing } | null = null;
+    let bd = 3;
+    for (const r of battle.regiments) {
+      if (r.location !== 'board' || r.garrisonId || r.owner === owner) continue;
+      const f = regimentFrame(r);
+      const d = polygonDistance([{ x: p.x, y: p.y }, { x: p.x + 1e-6, y: p.y }, { x: p.x, y: p.y + 1e-6 }], boxCorners(f, { u0: 0, u1: f.w, d: f.d })).distance;
+      if (d < bd) {
+        bd = d;
+        best = { targetId: r.id, facing: nearestFacing(f, p) };
+      }
+    }
+    return best;
+  };
+
   const onEntityDown = (sel: Selection) => (e: RPointerEvent<SVGElement>) => {
-    if (e.button !== 0 || space.current || tool !== 'select') return;
-    e.stopPropagation();
-    select(sel);
+    if (e.button !== 0 || space.current) return;
     const p = toBoard(e.clientX, e.clientY);
+    if (session?.aligning) {
+      e.stopPropagation();
+      const t = findAlignTarget(p);
+      if (t) useStore.getState().setAlign({ ...t, mode: 'contact' });
+      else notify('Click a facing of an enemy regiment');
+      return;
+    }
+    if (tool === 'distance') {
+      const ref = refFromSelection(sel);
+      if (!ref) return;
+      e.stopPropagation();
+      const pair = [...measure.pair, ref].slice(-2);
+      useStore.getState().setMeasure({ pair });
+      return;
+    }
+    if (tool === 'ring') {
+      if (sel.kind !== 'regiment' && sel.kind !== 'character') return;
+      e.stopPropagation();
+      const standId = e.altKey ? (e.target as SVGElement).getAttribute('data-stand-id') ?? undefined : undefined;
+      useStore.getState().setRing({ ref: { kind: sel.kind, id: sel.id, ...(standId ? { standId } : {}) } });
+      return;
+    }
+    if (tool !== 'select') return;
+    e.stopPropagation();
+    // Ctrl-click: closest distance between the selection and this.
+    if (e.ctrlKey || e.metaKey) {
+      const a = refFromSelection(selection);
+      const b = refFromSelection(sel);
+      if (a && b && a.id !== b.id) useStore.getState().setMeasure({ pair: [a, b] });
+      return;
+    }
+    const piece = movableFromSelection(sel);
+    if (piece) {
+      if (session && session.piece.id !== piece.id) useStore.getState().commitMove();
+      select(sel);
+      const cur = useStore.getState().moveSession;
+      const base = cur ? sessionPose({ ...cur, live: null }) : piecePose(battle, piece);
+      if (!base) return;
+      capture(e);
+      setDrag({ type: 'piece', piece, start: p, base, moved: false });
+      return;
+    }
+    if (session) useStore.getState().commitMove();
+    select(sel);
     capture(e);
     setDrag({ type: 'entity', sel, start: p, cur: p, moved: false, locked: isLocked(sel) });
+  };
+
+  const onHandleDown = (kind: HandleKind, e: RPointerEvent<SVGElement>) => {
+    if (e.button !== 0 || !session) return;
+    e.stopPropagation();
+    capture(e);
+    setDrag({ type: 'handle', kind, start: toBoard(e.clientX, e.clientY), base: sessionPose({ ...session, live: null }) });
   };
 
   const hoverFor = (sel: Selection) => ({
@@ -200,7 +321,19 @@ export function Board() {
 
   const onBackgroundDown = (e: RPointerEvent<SVGSVGElement>) => {
     const p = toBoard(e.clientX, e.clientY);
-    if (e.button === 1 || space.current || (e.button === 0 && tool === 'select')) {
+    if (e.button === 0 && session?.aligning && !space.current) {
+      const t = findAlignTarget(p);
+      if (t) useStore.getState().setAlign({ ...t, mode: 'contact' });
+      return;
+    }
+    if (e.button === 0 && tool === 'ruler' && !space.current) {
+      const a = e.altKey ? p : snap(p);
+      useStore.getState().setMeasure({ ruler: { a, b: a } });
+      capture(e);
+      setDrag({ type: 'ruler' });
+      return;
+    }
+    if (e.button === 1 || space.current || (e.button === 0 && (tool === 'select' || tool === 'distance' || tool === 'ring'))) {
       capture(e);
       setDrag({ type: 'pan', sx: e.clientX, sy: e.clientY, cx: view.cx, cy: view.cy, moved: false });
       return;
@@ -228,7 +361,59 @@ export function Board() {
     const p = toBoard(e.clientX, e.clientY);
     setPointer(p);
     if (hover) setHover({ ...hover, cx: e.clientX, cy: e.clientY });
+    if (session?.aligning) setAlignHover(findAlignTarget(p));
+    else if (alignHover) setAlignHover(null);
     if (!drag) return;
+    if (drag.type === 'ruler') {
+      const r = useStore.getState().measure.ruler;
+      if (r) useStore.getState().setMeasure({ ruler: { a: r.a, b: e.altKey ? p : snap(p) } });
+      return;
+    }
+    if (drag.type === 'piece') {
+      const movedPx = Math.hypot(p.x - drag.start.x, p.y - drag.start.y) * view.scale;
+      if (!drag.moved && movedPx <= DRAG_THRESHOLD_PX) return;
+      const st = useStore.getState();
+      if (!st.moveSession && !st.startMove(drag.piece)) {
+        setDrag(null);
+        return;
+      }
+      const box = pieceAt(battle, drag.piece, drag.base)?.box;
+      if (!box) return;
+      const delta = { x: p.x - drag.start.x, y: p.y - drag.start.y };
+      const seg = e.shiftKey
+        ? forwardSegment(drag.base, dot(delta, facingVec(drag.base.angle)))
+        : freeSegment(drag.base, { x: drag.base.x + delta.x, y: drag.base.y + delta.y, angle: drag.base.angle }, box);
+      st.setLive(seg);
+      if (!drag.moved) setDrag({ ...drag, moved: true });
+      return;
+    }
+    if (drag.type === 'handle') {
+      const st = useStore.getState();
+      const m = st.moveSession;
+      if (!m) return;
+      const box = pieceAt(battle, m.piece, drag.base)?.box;
+      if (!box) return;
+      const delta = { x: p.x - drag.start.x, y: p.y - drag.start.y };
+      const b0 = drag.base;
+      let seg;
+      if (drag.kind === 'forward') seg = forwardSegment(b0, dot(delta, facingVec(b0.angle)));
+      else if (drag.kind === 'sideways') seg = sidewaysSegment(b0, dot(delta, rightVec(b0.angle)));
+      else if (drag.kind === 'rotate') {
+        let a = dragAngle(boxCentre(b0, box), drag.start, p);
+        if (e.shiftKey) a = Math.round(a / 15) * 15;
+        seg = rotateSegment(b0, box, a);
+      } else {
+        // Dragging the left corner pivots on the right one, and vice versa.
+        const pivot = drag.kind === 'wheel-left' ? 'right' : 'left';
+        const pivotPt = localToWorld(b0, pivot === 'left' ? box.u0 : box.u1, 0);
+        const corner = localToWorld(b0, pivot === 'left' ? box.u1 : box.u0, 0);
+        let a = dragAngle(pivotPt, corner, p);
+        if (e.shiftKey) a = Math.round(a / 5) * 5;
+        seg = wheelSegment(b0, box, a, pivot);
+      }
+      st.setLive(seg);
+      return;
+    }
     if (drag.type === 'pan') {
       const dx = e.clientX - drag.sx;
       const dy = e.clientY - drag.sy;
@@ -253,8 +438,31 @@ export function Board() {
     const d = drag;
     setDrag(null);
     if (!d) return;
+    if (d.type === 'ruler') return;
     if (d.type === 'pan') {
-      if (!d.moved && tool === 'select') select(null);
+      if (!d.moved && tool === 'select' && !session) select(null);
+      return;
+    }
+    if (d.type === 'handle' || d.type === 'piece') {
+      const st = useStore.getState();
+      const live = st.moveSession?.live;
+      if (d.type === 'piece' && d.piece.kind === 'character' && d.moved) {
+        // Dropping a character on a friendly regiment joins it instead of moving.
+        const c = battle.characters.find((x) => x.id === d.piece.id)!;
+        const p = toBoard(e.clientX, e.clientY);
+        const target = battle.regiments.find(
+          (r) => r.location === 'board' && !r.garrisonId && r.owner === c.owner && regimentPolygons(r).some((poly) => pointInPolygon(p, poly)),
+        );
+        if (target) {
+          st.setLive(null);
+          st.commitMove();
+          if (target.standType !== c.standType && !c.rider) notify(`Stand types differ (${c.standType} / ${target.standType}) — joined anyway`);
+          dispatch({ type: 'attachCharacter', characterId: c.id, regimentId: target.id });
+          return;
+        }
+      }
+      if (live && (live.distance > 1e-6 || Math.abs(live.value) > 1e-6)) st.addSegment(live);
+      else st.setLive(null);
       return;
     }
     if (d.type === 'vertex') {
@@ -276,30 +484,9 @@ export function Board() {
     }
     const dx = d.cur.x - d.start.x;
     const dy = d.cur.y - d.start.y;
-    const moved = Math.hypot(dx, dy);
     const sel = d.sel;
     const r2 = (n: number) => Math.round(n * 1000) / 1000;
     switch (sel.kind) {
-      case 'regiment': {
-        const r = battle.regiments.find((x) => x.id === sel.id)!;
-        dispatch({ type: 'moveRegiment', id: r.id, pose: { x: r2(r.x + dx), y: r2(r.y + dy), angle: r.angle }, summary: `free drag ${fmtIn(moved)}` });
-        break;
-      }
-      case 'character': {
-        const c = battle.characters.find((x) => x.id === sel.id)!;
-        // Dropping a character on a friendly regiment joins it.
-        const p = toBoard(e.clientX, e.clientY);
-        const target = battle.regiments.find(
-          (r) => r.location === 'board' && !r.garrisonId && r.owner === c.owner && regimentPolygons(r).some((poly) => pointInPolygon(p, poly)),
-        );
-        if (target) {
-          if (target.standType !== c.standType && !c.rider) notify(`Stand types differ (${c.standType} / ${target.standType}) — joined anyway`);
-          dispatch({ type: 'attachCharacter', characterId: c.id, regimentId: target.id });
-        } else {
-          dispatch({ type: 'moveCharacter', id: c.id, pose: { x: r2((c.x ?? 0) + dx), y: r2((c.y ?? 0) + dy), angle: c.angle ?? 0 }, summary: `free drag ${fmtIn(moved)}` });
-        }
-        break;
-      }
       case 'terrain': {
         const t = battle.terrain.find((x) => x.id === sel.id)!;
         dispatch({ type: 'updateTerrain', id: t.id, patch: { x: r2(t.x + dx), y: r2(t.y + dy) } });
@@ -441,18 +628,31 @@ export function Board() {
     return out;
   })();
 
-  // --- drag read-out ------------------------------------------------------------
+  // --- drag read-outs ------------------------------------------------------------
   const readout = (() => {
-    if (drag?.type !== 'entity' || !drag.moved || drag.locked) return null;
-    const d = dist(drag.start, drag.cur);
-    return (
-      <Txt x={drag.cur.x} y={drag.cur.y - fs * 1.5} fs={fs * 1.1} flip={flip} weight={800} fill="#000">
-        {fmtIn(d)}
-      </Txt>
-    );
+    if (drag?.type === 'entity' && drag.moved && !drag.locked) {
+      return (
+        <Txt x={drag.cur.x} y={drag.cur.y - fs * 1.5} fs={fs * 1.1} flip={flip} weight={800} fill="#000">
+          {fmtIn(dist(drag.start, drag.cur))}
+        </Txt>
+      );
+    }
+    const live = session?.live;
+    if (live && pointer) {
+      return (
+        <Txt x={pointer.x} y={pointer.y - fs * 1.6} fs={fs * 1.1} flip={flip} weight={800} fill="#000">
+          {live.label}
+        </Txt>
+      );
+    }
+    return null;
   })();
 
-  const cursor = tool === 'select' ? (drag?.type === 'pan' && drag.moved ? 'grabbing' : 'default') : 'crosshair';
+  const rings = tool === 'ring' && measure.ring.ref ? ringRadii(eff, measure.ring) : [];
+  const movingWarn = moveWarns.length > 0;
+
+  const cursor =
+    session?.aligning ? (alignHover ? 'pointer' : 'crosshair') : tool === 'select' ? (drag?.type === 'pan' && drag.moved ? 'grabbing' : 'default') : 'crosshair';
 
   return (
     <div
@@ -494,25 +694,67 @@ export function Board() {
             .filter((m) => !m.destroyed)
             .map((m) => {
               const sel = { kind: 'objective' as const, id: m.id };
-              return <ObjectiveShape key={m.id} m={m} b={battle} fs={fs} flip={flip} selected={isSel('objective', m.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />;
+              return (
+                <ObjectiveShape key={m.id} m={m} b={battle} fs={fs} flip={flip} selected={isSel('objective', m.id)} warn={warnIds.has(m.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />
+              );
             })}
           {battle.markers.map((m) => {
             const sel = { kind: 'marker' as const, id: m.id };
             return <FreeMarkerShape key={m.id} m={m} fs={fs} flip={flip} selected={isSel('marker', m.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} />;
           })}
-          {battle.regiments
+          {session && moving && <Ghost pose={session.start} box={moving.box} />}
+          {eff.regiments
             .filter((r) => r.location === 'board' && !r.garrisonId)
             .map((r) => {
               const sel = { kind: 'regiment' as const, id: r.id };
-              return <RegimentShape key={r.id} reg={r} b={battle} fs={fs} flip={flip} selected={isSel('regiment', r.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />;
+              const isMoving = session?.piece.id === r.id;
+              return (
+                <RegimentShape
+                  key={r.id}
+                  reg={r}
+                  b={eff}
+                  fs={fs}
+                  flip={flip}
+                  selected={isSel('regiment', r.id)}
+                  warn={isMoving ? movingWarn : warnIds.has(r.id)}
+                  onDown={onEntityDown(sel)}
+                  hover={hoverFor(sel)}
+                />
+              );
             })}
-          {battle.characters
+          {eff.characters
             .filter((c) => c.location === 'board' && !c.attachedTo)
             .map((c) => {
               const sel = { kind: 'character' as const, id: c.id };
-              return <CharacterShape key={c.id} ch={c} b={battle} fs={fs} flip={flip} selected={isSel('character', c.id)} offset={offsetFor(sel)} onDown={onEntityDown(sel)} hover={hoverFor(sel)} />;
+              const isMoving = session?.piece.id === c.id;
+              return (
+                <CharacterShape
+                  key={c.id}
+                  ch={c}
+                  b={eff}
+                  fs={fs}
+                  flip={flip}
+                  selected={isSel('character', c.id)}
+                  warn={isMoving ? movingWarn : warnIds.has(c.id)}
+                  onDown={onEntityDown(sel)}
+                  hover={hoverFor(sel)}
+                />
+              );
             })}
+          <ContactLayer b={eff} px={px} />
           {handles}
+          {session && moving && tool === 'select' && !session.aligning && !session.align && <MoveHandles pose={sessionPose(session)} box={moving.box} px={px} onDown={onHandleDown} />}
+          {session && moving && (session.aligning || session.align) && (
+            <AlignPreview b={battle} pose={sessionPose({ ...session, live: null })} box={moving.box} hover={session.aligning ? alignHover : null} pending={session.align} fs={fs} flip={flip} px={px} />
+          )}
+          {eff.measurements.map((m) => (
+            <PinnedMeasurement key={m.id} b={eff} m={m} fs={fs} flip={flip} px={px} />
+          ))}
+          {rings.map((r) => (
+            <RangeRing key={r.label} b={eff} refr={measure.ring.ref!} radius={r.radius} label={r.label} fs={fs} flip={flip} px={px} />
+          ))}
+          {measure.pair.length === 2 && (tool === 'distance' || tool === 'select') && <DistanceLine b={eff} a1={measure.pair[0]} a2={measure.pair[1]} fs={fs} flip={flip} px={px} />}
+          {measure.ruler && tool === 'ruler' && <RulerLine a={measure.ruler.a} b={measure.ruler.b} fs={fs} flip={flip} px={px} />}
           {tool === 'drawTerrain' && draft.length > 0 && (
             <g pointerEvents="none">
               <polyline
@@ -535,6 +777,10 @@ export function Board() {
         <div className="board-hint">Click to add points · double-click or Enter to finish · Backspace removes the last point · Esc cancels</div>
       )}
       {(tool === 'placeZone' || tool === 'placeObjective') && <div className="board-hint">Click on the board to place · Esc cancels</div>}
+      {session?.aligning && <div className="board-hint">Click a facing (front, flank or rear) of an enemy regiment · Esc cancels</div>}
+      {!session?.aligning && tool === 'ruler' && <div className="board-hint">Drag to measure · snaps to stand corners and edge midpoints (Alt: no snap) · P pins</div>}
+      {!session?.aligning && tool === 'distance' && <div className="board-hint">Click two things to see their closest distance · P pins</div>}
+      {!session?.aligning && tool === 'ring' && <div className="board-hint">Click a regiment or character (Alt-click a single stand) · choose ranges in the panel · P pins</div>}
       {pointer && (
         <div className="coords">
           {pointer.x.toFixed(1)}", {pointer.y.toFixed(1)}"
@@ -542,6 +788,35 @@ export function Board() {
       )}
     </div>
   );
+}
+
+/** Current pose of a regiment or lone character on the board. */
+function piecePose(b: Battle, piece: MovingPiece): Pose | null {
+  if (piece.kind === 'regiment') {
+    const r = b.regiments.find((x) => x.id === piece.id);
+    return r && r.location === 'board' && !r.garrisonId ? { x: r.x, y: r.y, angle: r.angle } : null;
+  }
+  const c = b.characters.find((x) => x.id === piece.id);
+  return c && c.location === 'board' && !c.attachedTo && c.x !== undefined ? { x: c.x, y: c.y ?? 0, angle: c.angle ?? 0 } : null;
+}
+
+/** Ruler snap targets: stand corners and edge midpoints (regiments, characters, objective markers). */
+function collectSnapPoints(b: Battle): Vec[] {
+  const polys: Vec[][] = [];
+  for (const r of b.regiments) if (r.location === 'board' && !r.garrisonId) for (const g of regimentStandGeoms(r)) polys.push(g.poly);
+  for (const c of b.characters) {
+    if (c.location !== 'board' || c.attachedTo) continue;
+    const p = characterPolygon(c);
+    if (p) polys.push(p);
+  }
+  for (const m of b.objectiveMarkers) if (!m.destroyed) polys.push(objectiveMarkerPolygon(m));
+  const out: Vec[] = [];
+  for (const poly of polys)
+    poly.forEach((p, i) => {
+      const q = poly[(i + 1) % poly.length];
+      out.push(p, { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+    });
+  return out;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;

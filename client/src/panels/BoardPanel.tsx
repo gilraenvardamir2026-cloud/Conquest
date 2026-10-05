@@ -12,6 +12,7 @@ import {
 } from '@conquest/shared';
 import { dispatch, useStore } from '../store';
 import { NumberField, Row, Section, TextField } from '../ui/fields';
+import { PinnedList } from './MeasurePanel';
 
 export function BoardPanel() {
   const b = useStore((s) => s.battle);
@@ -191,6 +192,8 @@ export function BoardPanel() {
           </button>
         )}
       </Section>
+
+      <PinnedList b={b} />
 
       <Section title="Tokens">
         <button
