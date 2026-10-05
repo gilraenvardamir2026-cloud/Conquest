@@ -5,6 +5,7 @@ export * from './regiment';
 export * from './board';
 export * from './movement';
 export * from './measure';
+export * from './los';
 export * from './ops';
 export * from './reducer';
 export * from './ids';

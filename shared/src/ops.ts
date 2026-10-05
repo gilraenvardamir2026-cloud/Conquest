@@ -114,6 +114,8 @@ export type Op =
   | { type: 'clearMeasurements' }
   // Misc
   | { type: 'chat'; text: string }
+  /** A report line (e.g. a line-of-sight result) posted to the log; changes nothing. */
+  | { type: 'logNote'; text: string }
   | { type: 'restore'; label: string; entries: RestoreEntry[] }
   | { type: 'replaceBattle'; battle: Battle };
 

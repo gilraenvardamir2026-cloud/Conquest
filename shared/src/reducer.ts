@@ -657,6 +657,9 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       return { battle: { ...b, measurements: [] }, text: 'cleared pinned measurements' };
 
     // ----- Misc ----------------------------------------------------------------
+    case 'logNote':
+      if (!op.text.trim()) fail('Empty note');
+      return { battle: b, text: op.text.slice(0, 2000), noUndo: true };
     case 'chat':
       if (!op.text.trim()) fail('Empty message');
       return { battle: b, text: op.text.slice(0, 500), kind: 'chat', noUndo: true };
