@@ -132,22 +132,21 @@ function releaseGarrison(b: Battle, regimentId: string): Battle {
 }
 
 /**
- * Detach a character. Its stand is placed 1" in front of where it stood in the
- * regiment. Unless the reformOnDetach setting is off, the regiment then closes
- * the gap with a free reform that loses as few ranks as possible.
+ * Detach a character. Lone characters never stand on the board, so it goes to
+ * the regiment's location when that is the reserve, otherwise to the reserve
+ * (callers that join it to another regiment or place it set the location
+ * afterwards). Unless the reformOnDetach setting is off, the regiment then
+ * closes the gap with a free reform that loses as few ranks as possible.
  */
 function detachWithNote(b: Battle, characterId: string): { battle: Battle; note?: string } {
   const ci = idx(b.characters, characterId, 'Character');
   const ch = b.characters[ci];
   if (!ch.attachedTo) return { battle: b };
   const ri = b.regiments.findIndex((r) => r.id === ch.attachedTo);
-  const { attachedTo: _a, ...c } = ch;
-  if (ri < 0) return { battle: { ...b, characters: setAt(b.characters, ci, { ...c, location: 'reserve' }) } };
+  const { attachedTo: _a, x: _x, y: _y, angle: _g, ...c } = ch;
+  const placed: Character = { ...c, location: ch.location === 'destroyed' ? 'destroyed' : 'reserve' };
+  if (ri < 0) return { battle: { ...b, characters: setAt(b.characters, ci, placed) } };
   const reg = b.regiments[ri];
-  const box = regimentLocalBox(reg);
-  const u = reg.characterSlot ? reg.characterSlot.file * reg.standW : (box.u0 + box.u1) / 2 - ch.standW / 2;
-  const p = localToWorld(reg, u, -1 - ch.standD);
-  const pose = { x: p.x, y: p.y, angle: reg.angle };
   const { characterId: _c, characterSlot: gap, ...rest } = reg;
   let nr = rest as Regiment;
   let note: string | undefined;
@@ -156,8 +155,6 @@ function detachWithNote(b: Battle, characterId: string): { battle: Battle; note?
     nr = closed.regiment;
     note = closed.note;
   }
-  const location = reg.location === 'board' ? 'board' : reg.location === 'reserve' ? 'reserve' : ch.location;
-  const placed: Character = location === 'board' ? { ...c, ...pose, location } : { ...c, location };
   return {
     battle: { ...b, regiments: setAt(b.regiments, ri, nr), characters: setAt(b.characters, ci, placed) },
     note,
@@ -622,7 +619,9 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       const r0 = b.regiments.find((r) => r.id === op.regimentId) ?? fail('Regiment not found');
       if (c0.owner !== r0.owner) fail('A character can only join a regiment of the same owner');
       if (r0.characterId && r0.characterId !== c0.id) fail(`${r0.name} already has a character (${charName(b, r0.characterId) ?? '?'})`);
-      let out = c0.attachedTo ? detach(b, c0.id) : b;
+      const from = c0.attachedTo && c0.attachedTo !== r0.id ? b.regiments.find((r) => r.id === c0.attachedTo) : undefined;
+      const left = c0.attachedTo ? detachWithNote(b, c0.id) : { battle: b };
+      let out = left.battle;
       const reg = out.regiments.find((r) => r.id === r0.id)!;
       let nr: Regiment = { ...reg, characterId: c0.id };
       if (!c0.rider) {
@@ -635,14 +634,15 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
         return { ...rest, attachedTo: r0.id, location: reg.location };
       });
       const warn = c0.standType !== r0.standType && !c0.rider ? ` (stand types differ: ${c0.standType} / ${r0.standType})` : '';
-      return { battle: out, text: `${c0.name} ${c0.rider ? 'rides' : 'joined'} ${r0.name}${warn}` };
+      const moved = from ? `left ${from.name}${left.note ? ` (${from.name} reformed: ${left.note})` : ''} and ` : '';
+      return { battle: out, text: `${c0.name} ${moved}${c0.rider ? 'rides with' : 'joined'} ${r0.name}${warn}` };
     }
     case 'detachCharacter': {
       const c0 = b.characters.find((c) => c.id === op.characterId) ?? fail('Character not found');
       if (!c0.attachedTo) fail(`${c0.name} is not attached`);
       const rn = b.regiments.find((r) => r.id === c0.attachedTo)?.name ?? 'regiment';
       const d = detachWithNote(b, c0.id);
-      return { battle: d.battle, text: `${c0.name} left ${rn}${d.note ? `; ${rn} reformed (${d.note})` : ''}` };
+      return { battle: d.battle, text: `${c0.name} left ${rn} for the reserve${d.note ? `; ${rn} reformed (${d.note})` : ''}` };
     }
 
     // ----- Free tokens ------------------------------------------------------

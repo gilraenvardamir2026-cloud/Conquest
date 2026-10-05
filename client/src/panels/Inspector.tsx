@@ -5,7 +5,9 @@ import {
   allocateWounds,
   effectiveSize,
   engagedStandIds,
+  localToWorld,
   nextWoundTarget,
+  regimentLocalBox,
   presetFor,
   standName,
   STAND_TYPES,
@@ -226,15 +228,17 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
       </Section>
 
       <Section title="Character">
-        {ch ? (
+        {ch && (
           <div className="btn-row">
             <button className="link" onClick={() => useStore.getState().select({ kind: 'character', id: ch.id })}>
               ★ {ch.name} {ch.rider ? '(rider)' : ''} · {ch.wounds}/{ch.woundsMax}
             </button>
             <button onClick={() => dispatch({ type: 'adjustCharacterWounds', id: ch.id, delta: -1 })}>−</button>
             <button onClick={() => dispatch({ type: 'adjustCharacterWounds', id: ch.id, delta: 1 })}>+</button>
-            <button onClick={() => dispatch({ type: 'detachCharacter', characterId: ch.id })}>Detach</button>
           </div>
+        )}
+        {ch ? (
+          <DetachPicker c={ch} b={b} />
         ) : joinable.length ? (
           <select
             value=""
@@ -346,6 +350,59 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
 // Character
 // ---------------------------------------------------------------------------
 
+/** Middle of a regiment on the board, for sorting by distance. */
+function regimentCentre(r: Regiment) {
+  const box = regimentLocalBox(r);
+  return localToWorld(r, (box.u0 + box.u1) / 2, (box.v0 + box.v1) / 2);
+}
+
+/**
+ * Detach: a character never stands alone, so it joins another regiment of the
+ * same owner (nearest first) or goes to the reserve.
+ */
+function DetachPicker({ c, b }: { c: Character; b: Battle }) {
+  const [open, setOpen] = useState(false);
+  const from = b.regiments.find((r) => r.id === c.attachedTo);
+  useEffect(() => setOpen(false), [c.id, c.attachedTo]);
+  if (!open) {
+    return (
+      <div className="btn-row">
+        <button onClick={() => setOpen(true)}>Detach…</button>
+      </div>
+    );
+  }
+  const here = from && from.location === 'board' ? regimentCentre(from) : null;
+  const dist = (r: Regiment) => (here && r.location === 'board' ? Math.hypot(regimentCentre(r).x - here.x, regimentCentre(r).y - here.y) : Infinity);
+  const options = b.regiments
+    .filter((r) => r.owner === c.owner && r.id !== c.attachedTo && !r.characterId && r.location !== 'destroyed')
+    .sort((p, q) => (p.location === 'board' ? 0 : 1) - (q.location === 'board' ? 0 : 1) || dist(p) - dist(q) || p.name.localeCompare(q.name));
+  const join = (r: Regiment) => {
+    if (r.standType !== c.standType && !c.rider) useStore.getState().notify(`Stand types differ (${c.standType} / ${r.standType}) — joined anyway`);
+    dispatch({ type: 'attachCharacter', characterId: c.id, regimentId: r.id });
+  };
+  return (
+    <div className="detach-picker" role="group" aria-label={`Which regiment does ${c.name} join?`}>
+      <div className="small">Which regiment does {c.name} join?</div>
+      {options.length ? (
+        <div className="btn-col">
+          {options.map((r) => (
+            <button key={r.id} onClick={() => join(r)}>
+              {r.name} <span className="muted">({r.standType}{r.location === 'reserve' ? ', reserve' : ''})</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="muted small">No other regiment without a character.</div>
+      )}
+      <div className="btn-row">
+        <button onClick={() => dispatch({ type: 'detachCharacter', characterId: c.id })}>Send to reserve</button>
+        <button onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+
 function CharacterInspector({ c, b, close }: { c: Character; b: Battle; close: React.ReactNode }) {
   const upd = (patch: CharacterPatch) => dispatch({ type: 'updateCharacter', id: c.id, patch });
   const reg = c.attachedTo ? b.regiments.find((r) => r.id === c.attachedTo) : undefined;
@@ -393,13 +450,15 @@ function CharacterInspector({ c, b, close }: { c: Character; b: Battle; close: R
         )}
       </Section>
       <Section title="Regiment">
-        {c.attachedTo ? (
+        {c.attachedTo && (
           <div className="btn-row">
             <button className="link" onClick={() => reg && useStore.getState().select({ kind: 'regiment', id: reg.id })}>
               {reg?.name}
             </button>
-            <button onClick={() => dispatch({ type: 'detachCharacter', characterId: c.id })}>Detach</button>
           </div>
+        )}
+        {c.attachedTo ? (
+          <DetachPicker c={c} b={b} />
         ) : (
           <select
             value=""

@@ -3,7 +3,8 @@
 //
 // Defaults:
 //  - spectators may only chat;
-//  - a player moves and edits only their own regiments and characters;
+//  - a player moves and edits only their own regiments and characters, but
+//    either player may apply wounds (the attacker often does);
 //  - both players edit terrain, objectives and the board until the board is
 //    locked (objective markers can still be damaged and removed afterwards);
 //  - the "anyone can edit anything" room setting lifts the ownership rules;
@@ -49,20 +50,23 @@ export function authorize(b: Battle, actor: Actor, op: Op): string | null {
     case 'setCommandStand':
     case 'updateStand':
     case 'reformRegiment':
+      return ownRegiment(op.id);
+    // Wounds, casualties and their corrections: either player.
     case 'applyWounds':
     case 'adjustStandWounds':
     case 'removeStand':
     case 'restoreStand':
-      return ownRegiment(op.id);
+    case 'adjustCharacterWounds':
+      return null;
     // Characters
     case 'addCharacter':
       return casual || op.character.owner === actor ? null : 'You can only add characters to your own army';
     case 'updateCharacter':
       if (op.patch.owner && op.patch.owner !== actor && !casual) return 'You cannot give a character away';
       return ownCharacter(op.id);
-    case 'moveCharacter':
     case 'setCharacterLocation':
-    case 'adjustCharacterWounds':
+      return op.location === 'destroyed' ? null : ownCharacter(op.id);
+    case 'moveCharacter':
     case 'removeCharacter':
       return ownCharacter(op.id);
     case 'attachCharacter':

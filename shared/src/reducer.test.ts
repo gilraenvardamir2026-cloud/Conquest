@@ -140,7 +140,7 @@ describe('regiment ops', () => {
     expect(r.touched).toEqual(['mil']);
   });
 
-  it('attach reflows next to the command stand; detach closes ranks and places the stand 1" in front', () => {
+  it('attach reflows next to the command stand; detach closes ranks and sends the character to reserve', () => {
     let b = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: militia() }, { type: 'addCharacter', character: hero });
     b = run(b, { type: 'attachCharacter', characterId: 'hero', regimentId: 'mil' });
     const reg = b.regiments[0];
@@ -162,11 +162,25 @@ describe('regiment ops', () => {
     // Every other stand kept its slot.
     for (const s of reg.stands) if (s.id !== lone.id) expect(after.stands.find((x) => x.id === s.id)!.slot).toEqual(s.slot);
     expect(r.log.text).toContain('reformed');
+    // Lone characters never stand on the board.
     const c = b.characters[0];
-    expect(c.location).toBe('board');
-    expect(c.angle).toBe(0);
-    // Regiment front edge is at y = 40; the stand's rear edge sits 1" in front of it.
-    expect(c.y! + c.standD).toBeCloseTo(39, 9);
+    expect(c.location).toBe('reserve');
+    expect(c.x).toBeUndefined();
+    expect(r.log.text).toContain('for the reserve');
+  });
+
+  it('a character moving to another regiment leaves the old one reformed', () => {
+    const other = { ...militia(), id: 'mil2', name: 'Militia II', x: 60 };
+    let b = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: militia() }, { type: 'addRegiment', regiment: other }, { type: 'addCharacter', character: hero });
+    b = run(b, { type: 'attachCharacter', characterId: 'hero', regimentId: 'mil' });
+    const r = applyOp(b, env({ type: 'attachCharacter', characterId: 'hero', regimentId: 'mil2' }));
+    if (!r.ok) throw new Error(r.error);
+    const [m1, m2] = r.battle.regiments;
+    expect(m1.characterId).toBeUndefined();
+    expect(Math.max(...m1.stands.map((s) => s.slot.rank))).toBe(1);
+    expect(m2.characterId).toBe('hero');
+    expect(r.battle.characters[0]).toMatchObject({ attachedTo: 'mil2', location: 'board' });
+    expect(r.log.text).toMatch(/^Player 1: Hero left Militia \(Militia reformed: .+\) and joined Militia II$/);
   });
 
   it('detach takes the nearest rear stand and re-centres the rear rank', () => {

@@ -19,11 +19,19 @@ describe('authorize', () => {
     const move: Op = { type: 'moveRegiment', id: 'mil', pose: { x: 1, y: 1, angle: 0 } };
     expect(authorize(b, 'p1', move)).toBeNull();
     expect(authorize(b, 'p2', move)).toContain('belongs to the other player');
-    expect(authorize(b, 'p2', { type: 'applyWounds', id: 'mil', count: 1 })).not.toBeNull();
+    expect(authorize(b, 'p2', { type: 'reformRegiment', id: 'mil', files: 2 })).not.toBeNull();
     expect(authorize(b, 'p2', { type: 'addRegiment', regiment: mil('p1', 'x') })).not.toBeNull();
     expect(authorize(b, 'p2', { type: 'updateRegiment', id: 'mil', patch: { owner: 'p2' } })).not.toBeNull();
     const casual = { ...b, settings: { ...b.settings, anyoneCanEdit: true } };
     expect(authorize(casual, 'p2', move)).toBeNull();
+  });
+
+  it('either player applies wounds and removes casualties', () => {
+    const b = base();
+    expect(authorize(b, 'p2', { type: 'applyWounds', id: 'mil', count: 1 })).toBeNull();
+    expect(authorize(b, 'p2', { type: 'adjustStandWounds', id: 'mil', standId: 'mil-s1', delta: 1 })).toBeNull();
+    expect(authorize(b, 'p2', { type: 'removeStand', id: 'mil', standId: 'mil-s1' })).toBeNull();
+    expect(authorize(b, 'spectator', { type: 'applyWounds', id: 'mil', count: 1 })).not.toBeNull();
   });
 
   it('terrain and objectives are shared until the board is locked; marker damage always works', () => {

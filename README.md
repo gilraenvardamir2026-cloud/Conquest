@@ -153,10 +153,11 @@ settings (⚙ = in the Settings dialog).
 4. **Attaching a character reflows** the regiment, keeping the current stand
    order (front to back, left to right) and putting the character next to the
    command stand (⚙ right by default, or left). Wounded stands can therefore
-   change slot on attach. **Detaching** places the character's stand 1" in front
-   of where it stood, and the regiment immediately makes a free reform that
-   loses as few ranks as possible (⚙ "Close ranks when a character leaves",
-   on by default):
+   change slot on attach. **Detaching** asks which regiment the character
+   joins (same owner, no character yet; nearest first), or sends it to the
+   reserve: a character never stands on the board alone. The regiment it left
+   immediately makes a free reform that loses as few ranks as possible
+   (⚙ "Close ranks when a character leaves", on by default):
    - gap ahead of the rearmost rank: the rearmost-rank stand nearest the gap
      steps into it and the rest of that rank is re-centred (a rank is lost
      only if it empties);
@@ -249,7 +250,10 @@ settings (⚙ = in the Settings dialog).
     same browser gets its seat back after a refresh or reconnect. The person
     who created the room is the host and can free a seat (Settings).
 30. **Ownership** (unless ⚙ *Anyone can edit anything*): a player moves and
-    edits only their own regiments and characters, wounds included. Terrain,
+    edits only their own regiments and characters. Either player can apply
+    wounds, remove or restore casualties, and mark a character destroyed,
+    since the attacker often does it; when a wound tie comes up, whoever is
+    applying the wounds picks the stand. Terrain,
     scenario and objectives are shared until ⚙ *Board locked for the game*
     (board panel); objective markers can always be damaged and removed. The
     grid, pinned measurements, tokens, chat and log notes are always shared.
@@ -284,7 +288,8 @@ settings (⚙ = in the Settings dialog).
   result. Click a stand in the mini-grid for per-stand +/−, remove, command and
   label. *Reform…* lets you change files, auto-layout, or move/swap stands.
 - **Characters**: *+ Character*, then join a regiment from either inspector or
-  drag the character onto a friendly regiment. *Rider* characters show as a
+  drag the character onto a friendly regiment. *Detach…* lists the regiments
+  it can join instead, or *Send to reserve*. *Rider* characters show as a
   badge on their regiment with their own wound tracker.
 - **Objective markers**: select one to add damage per player; at 3 from either
   player, *Remove marker* takes it off the board (undo or *Restore* in the
