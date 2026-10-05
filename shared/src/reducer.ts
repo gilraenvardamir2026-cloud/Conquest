@@ -7,10 +7,11 @@
 // what undo needs.
 
 import { bounds, localToWorld } from './geometry';
-import { layoutTerrain, scenarioZones, terrainPolygon, toggleGarrison } from './board';
+import { engagedStandIds, layoutTerrain, scenarioZones, terrainPolygon, toggleGarrison } from './board';
 import { scenarioById } from './presets';
 import {
   allocateWounds,
+  closeGap,
   nextFreeSlot,
   reflowRegiment,
   regimentLocalBox,
@@ -114,32 +115,39 @@ function releaseGarrison(b: Battle, regimentId: string): Battle {
 }
 
 /**
- * Detach a character. Its slot is left empty (nothing reflows). The stand is
- * placed 1" in front of where it stood in the regiment.
+ * Detach a character. Its stand is placed 1" in front of where it stood in the
+ * regiment. Unless the reformOnDetach setting is off, the regiment then closes
+ * the gap with a free reform that loses as few ranks as possible.
  */
-function detach(b: Battle, characterId: string): Battle {
+function detachWithNote(b: Battle, characterId: string): { battle: Battle; note?: string } {
   const ci = idx(b.characters, characterId, 'Character');
   const ch = b.characters[ci];
-  if (!ch.attachedTo) return b;
+  if (!ch.attachedTo) return { battle: b };
   const ri = b.regiments.findIndex((r) => r.id === ch.attachedTo);
-  let out = b;
-  let pose: { x: number; y: number; angle: number } | undefined;
-  if (ri >= 0) {
-    const reg = b.regiments[ri];
-    const box = regimentLocalBox(reg);
-    const u = reg.characterSlot ? reg.characterSlot.file * reg.standW : (box.u0 + box.u1) / 2 - ch.standW / 2;
-    const p = localToWorld(reg, u, -1 - ch.standD);
-    pose = { x: p.x, y: p.y, angle: reg.angle };
-    const { characterId: _c, characterSlot: _s, ...rest } = reg;
-    out = { ...out, regiments: setAt(out.regiments, ri, rest as Regiment) };
-    const { attachedTo: _a, ...c } = ch;
-    const location = reg.location === 'board' ? 'board' : reg.location === 'reserve' ? 'reserve' : ch.location;
-    const placed: Character = location === 'board' && pose ? { ...c, ...pose, location } : { ...c, location };
-    return { ...out, characters: setAt(out.characters, ci, placed) };
-  }
   const { attachedTo: _a, ...c } = ch;
-  return { ...out, characters: setAt(out.characters, ci, { ...c, location: 'reserve' }) };
+  if (ri < 0) return { battle: { ...b, characters: setAt(b.characters, ci, { ...c, location: 'reserve' }) } };
+  const reg = b.regiments[ri];
+  const box = regimentLocalBox(reg);
+  const u = reg.characterSlot ? reg.characterSlot.file * reg.standW : (box.u0 + box.u1) / 2 - ch.standW / 2;
+  const p = localToWorld(reg, u, -1 - ch.standD);
+  const pose = { x: p.x, y: p.y, angle: reg.angle };
+  const { characterId: _c, characterSlot: gap, ...rest } = reg;
+  let nr = rest as Regiment;
+  let note: string | undefined;
+  if (gap && b.settings.reformOnDetach !== false) {
+    const closed = closeGap(nr, gap);
+    nr = closed.regiment;
+    note = closed.note;
+  }
+  const location = reg.location === 'board' ? 'board' : reg.location === 'reserve' ? 'reserve' : ch.location;
+  const placed: Character = location === 'board' ? { ...c, ...pose, location } : { ...c, location };
+  return {
+    battle: { ...b, regiments: setAt(b.regiments, ri, nr), characters: setAt(b.characters, ci, placed) },
+    note,
+  };
 }
+
+const detach = (b: Battle, characterId: string): Battle => detachWithNote(b, characterId).battle;
 
 function charName(b: Battle, id: string | undefined): string | undefined {
   return id ? b.characters.find((c) => c.id === id)?.name : undefined;
@@ -508,8 +516,10 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       const n = Math.round(finite(op.count, 'count'));
       if (n < 1 || n > 200) fail('Wounds must be 1–200');
       const r0 = b.regiments.find((r) => r.id === op.id) ?? fail('Regiment not found');
-      const res = allocateWounds(r0, n, !b.settings.confirmStandRemoval);
-      const extra = res.unallocated ? ` (${res.unallocated} not allocated: no stands left)` : '';
+      const engaged = engagedStandIds(b, r0);
+      const res = allocateWounds(r0, n, !b.settings.confirmStandRemoval, engaged);
+      let extra = res.unallocated ? ` (${res.unallocated} not allocated: no stands left)` : '';
+      if (engaged.size) extra += ` (${engaged.size} engaged stand${engaged.size === 1 ? '' : 's'} kept for last)`;
       return {
         battle: updateRegimentAt(b, op.id, () => res.regiment),
         text: `${r0.name}: ${plural(n, 'wound')} → ${res.steps.join(', ') || 'none'}${extra}`,
@@ -606,7 +616,8 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       const c0 = b.characters.find((c) => c.id === op.characterId) ?? fail('Character not found');
       if (!c0.attachedTo) fail(`${c0.name} is not attached`);
       const rn = b.regiments.find((r) => r.id === c0.attachedTo)?.name ?? 'regiment';
-      return { battle: detach(b, c0.id), text: `${c0.name} left ${rn}` };
+      const d = detachWithNote(b, c0.id);
+      return { battle: d.battle, text: `${c0.name} left ${rn}${d.note ? `; ${rn} reformed (${d.note})` : ''}` };
     }
 
     // ----- Free tokens ------------------------------------------------------

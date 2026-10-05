@@ -22,8 +22,8 @@ import {
   scenarioById,
   terrainPreset,
 } from './presets';
-import { characterPolygon, regimentPolygons } from './regiment';
-import type { Battle, ObjectiveMarker, Terrain, Zone } from './types';
+import { characterPolygon, regimentPolygons, slotPolygon } from './regiment';
+import type { Battle, ObjectiveMarker, PlayerSeat, Regiment, Terrain, Zone } from './types';
 
 export function terrainPolygon(t: Terrain): Polygon {
   switch (t.shape.kind) {
@@ -153,18 +153,34 @@ export function createBattle(opts: { id: string; name?: string; scenarioId?: str
 // ---------------------------------------------------------------------------
 
 /** Every stand footprint on the board (regiment stands, attached characters, lone characters). */
-export function boardStandPolygons(b: Battle): { ownerId: string; poly: Polygon }[] {
-  const out: { ownerId: string; poly: Polygon }[] = [];
+export function boardStandPolygons(b: Battle): { ownerId: string; seat: PlayerSeat; poly: Polygon }[] {
+  const out: { ownerId: string; seat: PlayerSeat; poly: Polygon }[] = [];
   for (const r of b.regiments) {
     if (r.location !== 'board' || r.garrisonId) continue;
-    for (const p of regimentPolygons(r)) out.push({ ownerId: r.id, poly: p });
+    for (const p of regimentPolygons(r)) out.push({ ownerId: r.id, seat: r.owner, poly: p });
   }
   for (const c of b.characters) {
     if (c.location !== 'board' || c.attachedTo) continue;
     const p = characterPolygon(c);
-    if (p) out.push({ ownerId: c.id, poly: p });
+    if (p) out.push({ ownerId: c.id, seat: c.owner, poly: p });
   }
   return out;
+}
+
+/** Two stands are in contact when they touch, corners included, within this tolerance. */
+export const CONTACT_TOLERANCE = 0.02;
+
+/** Ids of the regiment's stands touching any enemy stand (regiment or lone character). */
+export function engagedStandIds(b: Battle, reg: Regiment): Set<string> {
+  const ids = new Set<string>();
+  if (reg.location !== 'board' || reg.garrisonId) return ids;
+  const enemies = boardStandPolygons(b).filter((s) => s.seat !== reg.owner);
+  if (!enemies.length) return ids;
+  for (const s of reg.stands) {
+    const poly = slotPolygon(reg, s.slot);
+    if (enemies.some((e) => polygonDistance(poly, e.poly).distance <= CONTACT_TOLERANCE)) ids.add(s.id);
+  }
+  return ids;
 }
 
 /** Ids of zones that any stand overlaps (touching the edge counts). */

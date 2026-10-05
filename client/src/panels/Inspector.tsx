@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import {
+  engagedStandIds,
   nextWoundTarget,
   presetFor,
   standName,
@@ -111,7 +112,7 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
   };
 
   const removeOne = () => {
-    const t = nextWoundTarget(r) ?? r.stands[r.stands.length - 1];
+    const t = nextWoundTarget(r, engagedStandIds(b, r)) ?? r.stands[r.stands.length - 1];
     if (t) dispatch({ type: 'deleteStand', id: r.id, standId: t.id });
   };
 
@@ -339,7 +340,7 @@ function CharacterInspector({ c, b, close }: { c: Character; b: Battle; close: R
             <button className="link" onClick={() => reg && useStore.getState().select({ kind: 'regiment', id: reg.id })}>
               {reg?.name}
             </button>
-            <button onClick={() => dispatch({ type: 'detachCharacter', characterId: c.id })}>Detach (1" in front)</button>
+            <button onClick={() => dispatch({ type: 'detachCharacter', characterId: c.id })}>Detach</button>
           </div>
         ) : (
           <select

@@ -102,6 +102,44 @@ describe('wound allocation', () => {
     expect(last.unallocated).toBe(2);
   });
 
+  it('alternates ends of the rear rank, starting farthest from the command stand, centre last', () => {
+    // 4 × 2: command left of centre at front file 1, so the rear-right end is farthest.
+    let r = militia(8, 4);
+    expect(r.stands.find((s) => s.isCommand)!.slot).toEqual({ rank: 0, file: 1 });
+    const order: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const t = nextWoundTarget(r)!;
+      order.push(t.slot.file);
+      expect(t.slot.rank).toBe(1);
+      r = allocateWounds(r, 4).regiment;
+    }
+    expect(order).toEqual([3, 0, 2, 1]);
+  });
+
+  it('5-wide rear rank: left end, right end, then inwards, centre last', () => {
+    let r = militia(10, 5);
+    const order: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      order.push(nextWoundTarget(r)!.slot.file);
+      r = allocateWounds(r, 4).regiment;
+    }
+    expect(order).toEqual([0, 4, 1, 3, 2]);
+  });
+
+  it('engaged stands are skipped until no unengaged stand is left (command still last)', () => {
+    const r = militia();
+    const rearLeft = r.stands.find((s) => s.slot.rank === 1 && s.slot.file === 0)!;
+    const rearCentre = r.stands.find((s) => s.slot.rank === 1 && s.slot.file === 1)!;
+    const engaged = new Set([rearLeft.id, rearCentre.id]);
+    const res = allocateWounds(r, 20, true, engaged);
+    const removed = res.removedIds;
+    // Unengaged rank-and-file first (rear-right, then the front rank's ends), then the engaged ones, command last.
+    expect(removed.slice(0, 3)).not.toContain(rearLeft.id);
+    expect(removed.slice(0, 3)).not.toContain(rearCentre.id);
+    expect(removed.slice(3)).toEqual(expect.arrayContaining([rearLeft.id, rearCentre.id]));
+    expect(res.regiment.stands.every((s) => s.isCommand)).toBe(true);
+  });
+
   it('a wounded stand keeps taking wounds before anything else', () => {
     let r = militia();
     const frontLeft = r.stands.find((s) => s.slot.rank === 0 && s.slot.file === 0)!;

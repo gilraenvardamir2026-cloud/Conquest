@@ -89,18 +89,36 @@ settings (⚙ = in the Settings dialog).
 
 1. **Incomplete rear rank** is centred with half-stand offsets, so a stand's
    `file` can be fractional (e.g. 0.5).
-2. **Wound allocation "most external"** = farthest from the command stand's
-   lateral position (its slot is used even after it is removed). Ties go left
-   first; the stand left on the other end is then the farthest, which gives the
-   alternating order. If several stands are already wounded, the most wounded
-   is finished first.
+2. **Wound allocation** applies wounds one at a time, in this order
+   (characters are ignored):
+   1. wounded non-command stands first (the most wounded);
+   2. a stand is destroyed before an unwounded stand takes a wound;
+   3. then alternating ends of the rearmost rank, starting with the end
+      farthest from the command stand, so the centremost stand goes last. The
+      alternation is read from the rank itself: whichever side of the rank has
+      lost fewer stands gives the next one; on a tie, the end farther from the
+      command stand (its slot is used even after it is removed; ties left).
+      When the rearmost rank empties, the next rank becomes the rearmost;
+   4. stands engaged with an enemy (touching an enemy stand, corners included,
+      within 0.02") are kept until every unengaged stand is gone, so as few
+      unengaged stands as possible are left. They show ⚔ in the stand grid;
+   5. the command stand is always last.
 3. **Destroyed stands** are removed at once; ⚙ "Ask before removing a destroyed
    stand" leaves them at full damage with a *Remove now* button instead.
 4. **Attaching a character reflows** the regiment, keeping the current stand
    order (front to back, left to right) and putting the character next to the
    command stand (⚙ right by default, or left). Wounded stands can therefore
-   change slot on attach. **Detaching** does not reflow: the character's slot
-   stays empty and its stand is placed 1" in front of where it stood.
+   change slot on attach. **Detaching** places the character's stand 1" in front
+   of where it stood, and the regiment immediately makes a free reform that
+   loses as few ranks as possible (⚙ "Close ranks when a character leaves",
+   on by default):
+   - gap ahead of the rearmost rank: the rearmost-rank stand nearest the gap
+     steps into it and the rest of that rank is re-centred (a rank is lost
+     only if it empties);
+   - gap in the rearmost rank: that rank is re-centred;
+   - single-rank regiment: the rank closes up (one file fewer) and stays
+     centred where it was.
+   Every other stand keeps its slot.
 5. **Facing-arc frame** (used by the wheel width now and arcs in milestone 3)
    is the bounding box of occupied slots: most complete rank × number of ranks.
 6. **Keyword initials** on terrain tags are two letters; Obstructing is `Os` so

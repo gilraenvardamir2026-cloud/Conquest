@@ -61,6 +61,7 @@ export function presetFor(settings: BattleSettings, type: StandType): StandPrese
 export const DEFAULT_SETTINGS: BattleSettings = {
   standPresets: STAND_PRESETS,
   confirmStandRemoval: false,
+  reformOnDetach: true,
   characterSide: 'right',
   losObstructing: 'tournament',
   losSizeComparison: 'both',

@@ -189,6 +189,8 @@ export interface BattleSettings {
   standPresets: Record<Exclude<StandType, 'custom'>, StandPreset>;
   /** Ask before removing a stand whose damage reaches its wounds. */
   confirmStandRemoval: boolean;
+  /** When a character leaves, the regiment closes the gap with a free reform (fewest ranks lost). */
+  reformOnDetach: boolean;
   /** Side of the command stand an attaching character takes. */
   characterSide: 'left' | 'right';
   /** Line of sight: does Obstructing terrain block every line, or only when its Size ≥ both sizes. */

@@ -240,6 +240,64 @@ export function slotsOverlap(a: Slot, b: Slot): boolean {
   return a.rank === b.rank && Math.abs(a.file - b.file) < 1 - 0.01;
 }
 
+/**
+ * Close the gap left at `gap` (e.g. by a departing character) with a free
+ * reform that loses as few ranks as possible:
+ *  - gap in front of the rearmost rank: the rearmost-rank stand nearest to the
+ *    gap steps into it, then what is left of the rearmost rank is re-centred
+ *    (the rank count drops only if that rank empties);
+ *  - gap in the rearmost rank: that rank is re-centred;
+ *  - gap in a single-rank regiment: the rank closes up (one file fewer) and the
+ *    pose shifts so the regiment stays centred where it was.
+ * Every other stand keeps its slot.
+ */
+export function closeGap(reg: Regiment, gap: Slot): { regiment: Regiment; note?: string } {
+  if (!reg.stands.length) return { regiment: reg };
+  const rear = Math.max(...reg.stands.map((s) => s.slot.rank));
+  const files = Math.max(1, reg.files);
+  let stands = reg.stands;
+  let note: string | undefined;
+  const recentre = (list: Stand[], rank: number, width: number): Stand[] => {
+    const row = list.filter((s) => s.slot.rank === rank).sort((a, b) => a.slot.file - b.slot.file);
+    const offset = (width - row.length) / 2;
+    const pos = new Map(row.map((s, i) => [s.id, offset + i]));
+    return list.map((s) => (pos.has(s.id) ? { ...s, slot: { rank, file: pos.get(s.id)! } } : s));
+  };
+
+  if (gap.rank < rear) {
+    const donors = stands.filter((s) => s.slot.rank === rear);
+    const donor = donors.reduce((best, s) => {
+      const d = Math.abs(s.slot.file - gap.file);
+      const bd = Math.abs(best.slot.file - gap.file);
+      return d < bd - 1e-6 || (Math.abs(d - bd) <= 1e-6 && s.slot.file < best.slot.file) ? s : best;
+    });
+    note = `${standName(reg, donor)} stepped into the gap`;
+    stands = stands.map((s) => (s.id === donor.id ? { ...s, slot: { ...gap } } : s));
+    stands = recentre(stands, rear, files);
+    return { regiment: { ...reg, stands }, note };
+  }
+  if (rear > 0) return { regiment: { ...reg, stands: recentre(stands, rear, files) }, note: 'rear rank re-centred' };
+
+  // Single rank: close up and keep the regiment centred where it was.
+  const row = stands.slice().sort((a, b) => a.slot.file - b.slot.file);
+  const lo = Math.min(gap.file, ...row.map((s) => s.slot.file));
+  const hi = Math.max(gap.file, ...row.map((s) => s.slot.file)) + 1;
+  const shift = lo + (hi - lo - row.length) / 2; // new left edge, in old file units
+  const pos = new Map(row.map((s, i) => [s.id, i]));
+  const origin = localToWorld(reg, shift * reg.standW, 0);
+  return {
+    regiment: {
+      ...reg,
+      x: origin.x,
+      y: origin.y,
+      files: row.length,
+      stands: stands.map((s) => ({ ...s, slot: { rank: 0, file: pos.get(s.id)! } })),
+      casualties: reg.casualties.map((s) => ({ ...s, slot: { ...s.slot, file: s.slot.file - shift } })),
+    },
+    note: 'rank closed up',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Naming
 // ---------------------------------------------------------------------------
@@ -286,46 +344,62 @@ function commandFileCentre(reg: Regiment): number {
 }
 
 /**
- * Order of preference among candidate stands: rearmost rank first, then the
- * stand farthest from the command stand; ties go to the left.
+ * Rule 3: take a stand from alternating ends of the candidates' rearmost rank,
+ * starting with the end farthest from the command stand, so the centremost
+ * stand of the rank is hit last.
+ *
+ * Alternation is read from the rank itself: if more stands have already been
+ * removed from one side of the rank's centre, the other end goes next; when
+ * both sides have lost the same number, the end farther from the command
+ * stand goes (ties: left).
  */
-function mostExternal(cands: Stand[], cmdX: number): Stand {
+function alternatingEnd(reg: Regiment, cands: Stand[], cmdX: number): Stand {
   const rear = Math.max(...cands.map((s) => s.slot.rank));
-  const row = cands.filter((s) => s.slot.rank === rear);
-  let best = row[0];
-  let bestD = -Infinity;
-  for (const s of row) {
-    const d = Math.abs(s.slot.file + 0.5 - cmdX);
-    if (d > bestD + 1e-6 || (Math.abs(d - bestD) <= 1e-6 && s.slot.file < best.slot.file)) {
-      best = s;
-      bestD = d;
-    }
-  }
-  return best;
+  const row = cands.filter((s) => s.slot.rank === rear).sort((a, b) => a.slot.file - b.slot.file);
+  if (row.length === 1) return row[0];
+  const left = row[0];
+  const right = row[row.length - 1];
+  const rankSlots = [...reg.stands, ...reg.casualties].filter((s) => s.slot.rank === rear).map((s) => s.slot.file);
+  const mid = (Math.min(...rankSlots) + Math.max(...rankSlots) + 1) / 2;
+  const gone = reg.casualties.filter((s) => s.slot.rank === rear);
+  const goneLeft = gone.filter((s) => s.slot.file + 0.5 < mid - 1e-6).length;
+  const goneRight = gone.filter((s) => s.slot.file + 0.5 > mid + 1e-6).length;
+  if (goneLeft < goneRight) return left;
+  if (goneRight < goneLeft) return right;
+  const dl = Math.abs(left.slot.file + 0.5 - cmdX);
+  const dr = Math.abs(right.slot.file + 0.5 - cmdX);
+  return dr > dl + 1e-6 ? right : left;
 }
 
 /**
- * Which stand takes the next wound:
- *  1. A wounded stand (not the command stand) keeps taking wounds until destroyed.
- *  2. Otherwise the rearmost rank's most external stand (farthest from the command stand, ties left first).
- *  3. When the rearmost rank empties, the next rank becomes the rearmost (falls out of 2).
- *  4. The command stand is always last.
- * Stands already at woundsMax (awaiting removal) are skipped. Characters are ignored.
+ * Which stand takes the next wound (characters are ignored):
+ *  1. Wounded non-command stands first (the most wounded).
+ *  2. A stand must be destroyed before an unwounded stand takes a wound (follows from 1).
+ *  3. Then stands from alternating ends of the rearmost rank, starting with the
+ *     end farthest from the command stand; the centremost stand of a rank goes last.
+ *     When the rearmost rank empties, the next rank becomes the rearmost.
+ *  4. Stands engaged with an enemy are kept for after every unengaged stand, so
+ *     as few unengaged stands as possible are left.
+ *  5. The command stand is always last.
+ * Stands already at woundsMax (awaiting removal) are skipped.
  */
-export function nextWoundTarget(reg: Regiment): Stand | undefined {
+export function nextWoundTarget(reg: Regiment, engaged: ReadonlySet<string> = new Set()): Stand | undefined {
   const alive = reg.stands.filter((s) => s.wounds < s.woundsMax);
   if (!alive.length) return undefined;
   const cmdX = commandFileCentre(reg);
   const wounded = alive.filter((s) => !s.isCommand && s.wounds > 0);
   if (wounded.length) {
     const most = Math.max(...wounded.map((s) => s.wounds));
-    return mostExternal(
+    return alternatingEnd(
+      reg,
       wounded.filter((s) => s.wounds === most),
       cmdX,
     );
   }
   const rankAndFile = alive.filter((s) => !s.isCommand);
-  if (rankAndFile.length) return mostExternal(rankAndFile, cmdX);
+  const unengaged = rankAndFile.filter((s) => !engaged.has(s.id));
+  if (unengaged.length) return alternatingEnd(reg, unengaged, cmdX);
+  if (rankAndFile.length) return alternatingEnd(reg, rankAndFile, cmdX);
   return alive[0];
 }
 
@@ -346,18 +420,19 @@ export function removeStandToCasualties(reg: Regiment, standId: string): Regimen
 }
 
 /**
- * Apply n wounds one at a time using nextWoundTarget. With autoRemove, a stand
+ * Apply n wounds one at a time using nextWoundTarget (`engaged` = ids of stands
+ * in contact with an enemy). With autoRemove, a stand
  * whose damage reaches woundsMax goes to the casualty list at once; otherwise
  * it stays at max (awaiting confirmation) and is skipped by later wounds.
  */
-export function allocateWounds(reg: Regiment, n: number, autoRemove = true): AllocationResult {
+export function allocateWounds(reg: Regiment, n: number, autoRemove = true, engaged: ReadonlySet<string> = new Set()): AllocationResult {
   let r = reg;
   const order: string[] = [];
   const names = new Map<string, string>();
   const removedIds: string[] = [];
   let unallocated = 0;
   for (let i = 0; i < n; i++) {
-    const t = nextWoundTarget(r);
+    const t = nextWoundTarget(r, engaged);
     if (!t) {
       unallocated = n - i;
       break;

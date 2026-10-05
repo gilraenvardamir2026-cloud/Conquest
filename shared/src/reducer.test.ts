@@ -140,23 +140,82 @@ describe('regiment ops', () => {
     expect(r.touched).toEqual(['mil']);
   });
 
-  it('attach reflows next to the command stand; detach leaves a gap and places the stand 1" in front', () => {
+  it('attach reflows next to the command stand; detach closes ranks and places the stand 1" in front', () => {
     let b = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: militia() }, { type: 'addCharacter', character: hero });
     b = run(b, { type: 'attachCharacter', characterId: 'hero', regimentId: 'mil' });
     const reg = b.regiments[0];
     expect(reg.characterSlot).toEqual({ rank: 0, file: 2 });
+    // 6 stands + character in 3 files: 3 + 3 + 1 centred.
+    const lone = reg.stands.find((s) => s.slot.rank === 2)!;
+    expect(lone.slot).toEqual({ rank: 2, file: 1 });
     expect(b.characters[0].attachedTo).toBe('mil');
     expect(b.characters[0].location).toBe('board');
 
-    b = run(b, { type: 'detachCharacter', characterId: 'hero' });
+    const r = applyOp(b, env({ type: 'detachCharacter', characterId: 'hero' }));
+    if (!r.ok) throw new Error(r.error);
+    b = r.battle;
     const after = b.regiments[0];
     expect(after.characterId).toBeUndefined();
-    expect(after.stands.map((s) => s.slot)).toEqual(reg.stands.map((s) => s.slot));
+    // The lone third-rank stand fills the gap: back to 3 × 2, one rank fewer.
+    expect(after.stands.find((s) => s.id === lone.id)!.slot).toEqual({ rank: 0, file: 2 });
+    expect(Math.max(...after.stands.map((s) => s.slot.rank))).toBe(1);
+    // Every other stand kept its slot.
+    for (const s of reg.stands) if (s.id !== lone.id) expect(after.stands.find((x) => x.id === s.id)!.slot).toEqual(s.slot);
+    expect(r.log.text).toContain('reformed');
     const c = b.characters[0];
     expect(c.location).toBe('board');
     expect(c.angle).toBe(0);
     // Regiment front edge is at y = 40; the stand's rear edge sits 1" in front of it.
     expect(c.y! + c.standD).toBeCloseTo(39, 9);
+  });
+
+  it('detach takes the nearest rear stand and re-centres the rear rank', () => {
+    // 3 files, 6 stands + character → rank 2 has one stand; make a 2-rank case instead:
+    // 5 stands + character in 3 files → front [x, C, hero], rear [x, x, x].
+    const reg = createRegiment({ id: 'r5', owner: 'p1', name: 'R5', standType: 'infantry', preset: STAND_PRESETS.infantry, stands: 5, files: 3, woundsMax: 4, location: 'board', x: 10, y: 30 });
+    let b = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: reg }, { type: 'addCharacter', character: hero });
+    b = run(b, { type: 'attachCharacter', characterId: 'hero', regimentId: 'r5' });
+    expect(b.regiments[0].stands.filter((s) => s.slot.rank === 1).map((s) => s.slot.file)).toEqual([0, 1, 2]);
+    b = run(b, { type: 'detachCharacter', characterId: 'hero' });
+    const after = b.regiments[0];
+    expect(after.stands.filter((s) => s.slot.rank === 0).map((s) => s.slot.file).sort()).toEqual([0, 1, 2]);
+    // Rear-right stepped forward; the two left behind are centred.
+    expect(after.stands.filter((s) => s.slot.rank === 1).map((s) => s.slot.file).sort()).toEqual([0.5, 1.5]);
+  });
+
+  it('a single rank closes up and stays centred', () => {
+    const reg = createRegiment({ id: 'one', owner: 'p1', name: 'Line', standType: 'infantry', preset: STAND_PRESETS.infantry, stands: 3, files: 4, woundsMax: 4, location: 'board', x: 10, y: 30 });
+    let b = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: reg }, { type: 'addCharacter', character: hero });
+    b = run(b, { type: 'attachCharacter', characterId: 'hero', regimentId: 'one' });
+    expect(b.regiments[0].characterSlot).toEqual({ rank: 0, file: 2 });
+    b = run(b, { type: 'detachCharacter', characterId: 'hero' });
+    const after = b.regiments[0];
+    expect(after.files).toBe(3);
+    expect(after.stands.map((s) => s.slot.file).sort()).toEqual([0, 1, 2]);
+    // Old extent was 4 stands wide from x = 10; the 3 stands are centred in it.
+    expect(after.x).toBeCloseTo(10 + STAND_PRESETS.infantry.w / 2, 9);
+    expect(after.y).toBeCloseTo(30, 9);
+  });
+
+  it('with reformOnDetach off the gap stays', () => {
+    let b = run(createBattle({ id: 'b' }), { type: 'updateSettings', patch: { reformOnDetach: false } }, { type: 'addRegiment', regiment: militia() }, { type: 'addCharacter', character: hero });
+    b = run(b, { type: 'attachCharacter', characterId: 'hero', regimentId: 'mil' });
+    const before = b.regiments[0].stands.map((s) => s.slot);
+    b = run(b, { type: 'detachCharacter', characterId: 'hero' });
+    expect(b.regiments[0].stands.map((s) => s.slot)).toEqual(before);
+  });
+
+  it('engaged stands are kept for after every unengaged stand', () => {
+    // Militia faces up from y = 40; an enemy stand touches the left flank of its rear-left stand only.
+    const m = militia();
+    const rearLeft = m.stands.find((s) => s.slot.rank === 1 && s.slot.file === 0)!;
+    const enemy = createRegiment({ id: 'en', owner: 'p2', name: 'Enemy', standType: 'infantry', preset: STAND_PRESETS.infantry, stands: 1, files: 1, woundsMax: 4, location: 'board', x: 30 - STAND_PRESETS.infantry.w, y: 40 + STAND_PRESETS.infantry.d + 0.5 });
+    const b = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: m }, { type: 'addRegiment', regiment: enemy });
+    const r = applyOp(b, env({ type: 'applyWounds', id: 'mil', count: 4 }));
+    if (!r.ok) throw new Error(r.error);
+    // Rear-left is engaged, so the rear-right goes first instead.
+    expect(r.log.text).toBe('Player 1: Militia: 4 wounds → rear-right removed (1 engaged stand kept for last)');
+    expect(r.battle.regiments[0].stands.some((s) => s.id === rearLeft.id)).toBe(true);
   });
 
   it('a rider joins without taking a slot and keeps its own wounds', () => {

@@ -57,6 +57,9 @@ export function SettingsDialog() {
         <Row label="Ask before removing a destroyed stand">
           <input type="checkbox" checked={s.confirmStandRemoval} onChange={(e) => set({ confirmStandRemoval: e.target.checked })} />
         </Row>
+        <Row label="Close ranks when a character leaves">
+          <input type="checkbox" checked={s.reformOnDetach !== false} onChange={(e) => set({ reformOnDetach: e.target.checked })} />
+        </Row>
         <Row label="Character joins on the command stand's">
           <select value={s.characterSide} onChange={(e) => set({ characterSide: e.target.value as 'left' | 'right' })}>
             <option value="right">right</option>

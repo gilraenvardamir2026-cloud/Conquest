@@ -3,7 +3,7 @@
 // change slot: pick a stand, then click an empty cell (move) or a stand (swap).
 
 import { useMemo, useState } from 'react';
-import { autoLayout, slotsOverlap, standName, type Battle, type Regiment, type Slot } from '@conquest/shared';
+import { autoLayout, engagedStandIds, slotsOverlap, standName, type Battle, type Regiment, type Slot } from '@conquest/shared';
 import { dispatch } from '../store';
 import { NumberField, TextField } from '../ui/fields';
 
@@ -12,6 +12,7 @@ const CELL = 40;
 export function StandGrid({ reg, b }: { reg: Regiment; b: Battle }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [reform, setReform] = useState<{ files: number; slots: Record<string, Slot> } | null>(null);
+  const engaged = useMemo(() => engagedStandIds(b, reg), [b, reg]);
   const ch = reg.characterId ? b.characters.find((c) => c.id === reg.characterId) : undefined;
   const hasCharSlot = !!(ch && reg.characterSlot);
   const cellH = Math.max(24, Math.min(CELL * 2, (CELL * reg.standD) / reg.standW));
@@ -109,12 +110,13 @@ export function StandGrid({ reg, b }: { reg: Regiment; b: Battle }) {
               className={`cell stand ${it.isChar ? 'char' : ''} ${picked === it.id ? 'picked' : ''} ${dead ? 'dead' : ''}`}
               style={{ left: left(it.slot), top: top(it.slot), width: CELL, height: cellH, background: b.players[reg.owner].color }}
               onClick={() => clickItem(it.id)}
-              title={it.isChar ? ch!.name : standName(reg, s)}
+              title={it.isChar ? ch!.name : `${standName(reg, s)}${engaged.has(s.id) ? ' · engaged (takes wounds after unengaged stands)' : ''}`}
             >
               {it.isChar ? (
                 <span className="cell-text">★{ch!.name.slice(0, 4)}</span>
               ) : (
                 <span className="cell-text">
+                  {engaged.has(s.id) ? '⚔' : ''}
                   {s.isCommand ? 'C' : ''}
                   {s.label ? s.label.slice(0, 3) : ''}
                   <br />
