@@ -59,7 +59,7 @@ export function BoardPanel() {
       </Section>
 
       <Section title="Scenario">
-        <select value={b.board.scenarioId ?? 'custom'} onChange={(e) => setScenario(e.target.value)}>
+        <select aria-label="Scenario" value={b.board.scenarioId ?? 'custom'} onChange={(e) => setScenario(e.target.value)}>
           {SCENARIOS.map((s) => (
             <option key={s.id} value={s.id}>
               {s.number}. {s.name}
@@ -136,7 +136,7 @@ export function BoardPanel() {
           Buildings as garrison terrain
         </label>
         <div className="btn-row">
-          <select value={preset} onChange={(e) => setPreset(e.target.value)}>
+          <select aria-label="Terrain preset" value={preset} onChange={(e) => setPreset(e.target.value)}>
             {TERRAIN_PRESETS.map((p) => (
               <option key={p.key} value={p.key}>
                 {p.name}

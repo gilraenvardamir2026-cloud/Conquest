@@ -170,7 +170,7 @@ export function StandGrid({ reg, b, tieIds, onTiePick }: { reg: Regiment; b: Bat
         <div className="reform-bar">
           <div className="btn-row">
             <span className="row-label">Files</span>
-            <NumberField value={reform.files} digits={0} step={1} min={1} max={60} width={48} onCommit={(n) => n && autoArrange(n)} />
+            <NumberField value={reform.files} label="Files" digits={0} step={1} min={1} max={60} width={48} onCommit={(n) => n && autoArrange(n)} />
             <button onClick={() => autoArrange(reform.files)}>Auto layout</button>
           </div>
           <div className="muted small">Pick a stand, then click an empty cell to move it or another stand to swap.</div>

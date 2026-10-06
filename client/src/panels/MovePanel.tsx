@@ -164,17 +164,17 @@ export function MovePanel() {
       <Section title="Precise entry">
         <div className="btn-row">
           <span className="row-label">Forward</span>
-          <NumberField value={fwd} width={56} onCommit={(n) => setFwd(n ?? 0)} suffix='"' title="Negative = backward" />
+          <NumberField value={fwd} width={56} onCommit={(n) => setFwd(n ?? 0)} suffix='"' title="Negative = backward" label="Forward distance, inches" />
           <button onClick={() => fwd && add(forwardSegment(base, fwd))}>Add</button>
         </div>
         <div className="btn-row">
           <span className="row-label">Sideways</span>
-          <NumberField value={side} width={56} onCommit={(n) => setSide(n ?? 0)} suffix='"' title="Negative = left" />
+          <NumberField value={side} width={56} onCommit={(n) => setSide(n ?? 0)} suffix='"' title="Negative = left" label="Sideways distance, inches" />
           <button onClick={() => side && add(sidewaysSegment(base, side))}>Add</button>
         </div>
         <div className="btn-row">
           <span className="row-label">Wheel</span>
-          <NumberField value={wheel} width={56} min={0} onCommit={(n) => setWheel(n ?? 0)} />
+          <NumberField value={wheel} width={56} min={0} onCommit={(n) => setWheel(n ?? 0)} label="Wheel amount" />
           <select value={wheelUnit} onChange={(e) => setWheelUnit(e.target.value as 'deg' | 'in')} aria-label="Wheel unit">
             <option value="in">inches</option>
             <option value="deg">degrees</option>
@@ -184,7 +184,7 @@ export function MovePanel() {
         </div>
         <div className="btn-row">
           <span className="row-label">Rotate</span>
-          <NumberField value={rot} width={56} min={-180} max={180} onCommit={(n) => setRot(n ?? 0)} suffix="°" title="About the centre; negative = anticlockwise" />
+          <NumberField value={rot} width={56} min={-180} max={180} onCommit={(n) => setRot(n ?? 0)} suffix="°" title="About the centre; negative = anticlockwise" label="Rotation, degrees" />
           <button onClick={() => rot && add(rotateSegment(base, me.box, rot))}>Add</button>
         </div>
         <div className="muted small">Arrow keys nudge 0.1" (Shift 1") along its own axes · Q / E rotate 1° (Shift 15°) · Shift-drag the body to stay on the facing axis.</div>

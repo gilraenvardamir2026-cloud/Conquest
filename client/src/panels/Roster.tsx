@@ -220,8 +220,8 @@ function NewRegimentForm({ seat, b, onDone }: { seat: PlayerSeat; b: Battle; onD
         onDone();
       }}
     >
-      <input type="text" autoFocus placeholder="Name, e.g. Militia" value={name} onChange={(e) => setName(e.target.value)} />
-      <select value={type} onChange={(e) => changeType(e.target.value as StandType)}>
+      <input type="text" aria-label="Regiment name" autoFocus placeholder="Name, e.g. Militia" value={name} onChange={(e) => setName(e.target.value)} />
+      <select aria-label="Stand type" value={type} onChange={(e) => changeType(e.target.value as StandType)}>
         {STAND_TYPES.map((t) => (
           <option key={t} value={t}>
             {t}
@@ -230,11 +230,11 @@ function NewRegimentForm({ seat, b, onDone }: { seat: PlayerSeat; b: Battle; onD
       </select>
       <div className="btn-row">
         <span className="row-label">Stands</span>
-        <NumberField value={stands} digits={0} step={1} min={1} max={60} width={44} onCommit={(n) => n && setStands(n)} />
+        <NumberField value={stands} label="Stands" digits={0} step={1} min={1} max={60} width={44} onCommit={(n) => n && setStands(n)} />
         <span className="row-label">Files</span>
-        <NumberField value={files} digits={0} step={1} min={1} max={60} width={44} onCommit={(n) => n && setFiles(n)} />
+        <NumberField value={files} label="Files" digits={0} step={1} min={1} max={60} width={44} onCommit={(n) => n && setFiles(n)} />
         <span className="row-label">W</span>
-        <NumberField value={wounds} digits={0} step={1} min={1} max={99} width={44} onCommit={(n) => n && setWounds(n)} />
+        <NumberField value={wounds} label="Wounds per stand" digits={0} step={1} min={1} max={99} width={44} onCommit={(n) => n && setWounds(n)} />
       </div>
       <div className="btn-row">
         <button type="submit" className="primary">
