@@ -258,6 +258,16 @@ const presence = z
   })
   .partial();
 
+const cardRef = z.object({ kind: z.enum(['regiment', 'character']), id });
+const stackAction = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('set'), cards: z.array(cardRef).max(100) }),
+  z.object({ t: z.literal('lock') }),
+  z.object({ t: z.literal('unlock') }),
+  z.object({ t: z.literal('flip') }),
+  z.object({ t: z.literal('unflip') }),
+  z.object({ t: z.literal('clear') }),
+]);
+
 export const clientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hello'), room: text(12), token: z.string().min(16).max(64), name: text(40).optional(), lastSeq: z.number().int().min(0).optional(), wasSeat: seat.optional() }),
   z.object({ t: z.literal('claim'), seat, name: text(40) }),
@@ -268,6 +278,8 @@ export const clientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('reroll'), id, indices: z.array(z.number().int().min(0).max(59)).min(1).max(60) }),
   z.object({ t: z.literal('rolloff') }),
   z.object({ t: z.literal('freeSeat'), seat }),
+  z.object({ t: z.literal('stack'), action: stackAction }),
+  z.object({ t: z.literal('stackRestore'), cards: z.array(cardRef).max(100) }),
   z.object({ t: z.literal('ping') }),
 ]);
 
@@ -277,6 +289,14 @@ export const clientMsgSchema = z.discriminatedUnion('t', [
 
 const author = z.enum(['p1', 'p2', 'spectator', 'system']);
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+const commandCard = z.object({ kind: z.enum(['regiment', 'character']), id, name: text(80) });
+const commandState = z.object({
+  round: z.number().int().min(0).max(1000),
+  locked: z.boolean(),
+  size: z.number().int().min(0).max(100),
+  revealed: z.array(commandCard.extend({ at: z.number() })).max(100),
+});
 
 export const battleSchema = z.object({
   id: text(64),
@@ -317,6 +337,12 @@ export const battleSchema = z.object({
     )
     .max(50),
   measurements: z.array(measurement).max(500),
+  command: z
+    .object({
+      p1: commandState,
+      p2: commandState,
+    })
+    .optional(),
   settings: settingsPatch,
   log: z.array(z.object({ id: text(64), seq: z.number().int().min(0), at: z.number(), by: author, kind: z.enum(['op', 'chat', 'dice', 'system']), text: text(2500) })).max(1000),
 });

@@ -240,6 +240,27 @@ export interface LogEntry {
   text: string;
 }
 
+/** A command card: one per regiment or character. The name is kept so a card still reads right if the unit is deleted. */
+export interface CommandCard {
+  kind: 'regiment' | 'character';
+  id: string;
+  name: string;
+}
+
+/**
+ * A player's command stack as everyone sees it. The order of the cards not
+ * yet flipped is secret: the server keeps it and shows it only to its owner.
+ */
+export interface CommandState {
+  /** Stacks locked so far; the current round's number while locked. */
+  round: number;
+  locked: boolean;
+  /** Cards in the locked stack. */
+  size: number;
+  /** Cards flipped this round, in order; `at` = when. */
+  revealed: (CommandCard & { at: number })[];
+}
+
 export interface Battle {
   id: string;
   name: string;
@@ -259,6 +280,8 @@ export interface Battle {
   dice: DiceRoll[];
   /** Pinned rulers, distances and range rings. */
   measurements: Measurement[];
+  /** Command stacks (public part). */
+  command: Record<PlayerSeat, CommandState>;
   settings: BattleSettings;
   log: LogEntry[];
 }

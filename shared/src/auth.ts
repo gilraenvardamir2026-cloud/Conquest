@@ -116,6 +116,11 @@ export function authorize(b: Battle, actor: Actor, op: Op): string | null {
       return null;
     case 'rollDice':
     case 'rerollDice':
+    case 'lockCommandStack':
+    case 'unlockCommandStack':
+    case 'revealCommandCard':
+    case 'unrevealCommandCard':
+    case 'clearCommandStack':
     case 'restore':
     case 'replaceBattle':
       return 'Only the server can do that';

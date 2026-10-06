@@ -9,7 +9,8 @@ import type { Facing } from './movement';
 import type { MovingPiece } from './measure';
 import type { LosMode, LosParty } from './los';
 import type { Op, OpEnvelope } from './ops';
-import type { Battle, EntityRef, PlayerSeat } from './types';
+import type { StackAction } from './command';
+import type { Battle, CommandCard, EntityRef, PlayerSeat } from './types';
 import type { Pose, Vec } from './geometry';
 
 /** Live, unsaved state another person sees: about 15 updates per second at most. */
@@ -37,6 +38,10 @@ export type ClientMsg =
   | { t: 'reroll'; id: string; indices: number[] }
   | { t: 'rolloff' }
   | { t: 'freeSeat'; seat: PlayerSeat }
+  /** Build, lock, flip, take back or clear your command stack. */
+  | { t: 'stack'; action: StackAction }
+  /** After the server lost the room: give back the stack this browser remembers. */
+  | { t: 'stackRestore'; cards: { kind: 'regiment' | 'character'; id: string }[] }
   | { t: 'ping' };
 
 export interface SeatInfo {
@@ -71,6 +76,8 @@ export type ServerMsg =
       /** …only what the client missed since its lastSeq. */
       ops?: OpEnvelope[];
       dice: DiceStatus;
+      /** Your command stack's secret part (cards not yet flipped, top first). */
+      stack?: CommandCard[];
     }
   | { t: 'op'; env: OpEnvelope }
   | { t: 'reject'; id: string; error: string }
@@ -78,6 +85,8 @@ export type ServerMsg =
   | { t: 'seats'; seats: SeatsInfo; spectators: number }
   | { t: 'presence'; from: string; seat: PlayerSeat | 'spectator'; name: string; p: Presence | null }
   | { t: 'dice'; dice: DiceStatus }
+  /** Your command stack's secret part changed (sent only to its owner). */
+  | { t: 'stack'; cards: CommandCard[] }
   | { t: 'notice'; text: string; kind?: 'info' | 'error' }
   | { t: 'pong' };
 

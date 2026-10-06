@@ -9,6 +9,7 @@
 import { bounds, localToWorld } from './geometry';
 import { engagedStandIds, layoutTerrain, normalizeBattle, scenarioZones, terrainPolygon } from './board';
 import { scenarioById } from './presets';
+import { MAX_STACK } from './command';
 import {
   allocateWounds,
   closeGap,
@@ -741,6 +742,59 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       }
       return { battle: out, text: `undid: ${op.label.slice(0, 200)}` };
     }
+    // ----- Command stacks (server-made; the secret order lives with the dealer) -----
+    case 'lockCommandStack': {
+      const c = b.command[op.seat];
+      if (c.locked) fail('The stack is already locked');
+      if (!Number.isInteger(op.size) || op.size < 1 || op.size > MAX_STACK) fail('A stack needs at least one card');
+      const round = c.round + 1;
+      return {
+        battle: { ...b, command: { ...b.command, [op.seat]: { round, locked: true, size: op.size, revealed: [] } } },
+        text: `locked a command stack of ${op.size} card${op.size === 1 ? '' : 's'} for round ${round}`,
+        noUndo: true,
+      };
+    }
+    case 'unlockCommandStack': {
+      const c = b.command[op.seat];
+      if (!c.locked) fail('The stack is not locked');
+      if (c.revealed.length) fail('Cards have been flipped already');
+      return {
+        battle: { ...b, command: { ...b.command, [op.seat]: { ...c, round: c.round - 1, locked: false, size: 0 } } },
+        text: 'is rebuilding the command stack',
+        noUndo: true,
+      };
+    }
+    case 'revealCommandCard': {
+      const c = b.command[op.seat];
+      if (!c.locked) fail('Lock the stack first');
+      if (c.revealed.length >= c.size) fail('No cards left to flip');
+      const n = c.revealed.length + 1;
+      const card = { kind: op.card.kind, id: op.card.id, name: String(op.card.name).slice(0, 80), at: env.at };
+      return {
+        battle: { ...b, command: { ...b.command, [op.seat]: { ...c, revealed: [...c.revealed, card] } } },
+        text: `command card ${n}/${c.size}: ${card.name}`,
+        noUndo: true,
+      };
+    }
+    case 'unrevealCommandCard': {
+      const c = b.command[op.seat];
+      const last = c.revealed.at(-1) ?? fail('No card to take back');
+      return {
+        battle: { ...b, command: { ...b.command, [op.seat]: { ...c, revealed: c.revealed.slice(0, -1) } } },
+        text: `took back the command card ${last.name}`,
+        noUndo: true,
+      };
+    }
+    case 'clearCommandStack': {
+      const c = b.command[op.seat];
+      const left = c.size - c.revealed.length;
+      return {
+        battle: { ...b, command: { ...b.command, [op.seat]: { ...c, locked: false, size: 0, revealed: [] } } },
+        text: c.locked ? `ended round ${c.round}${left ? ` with ${left} card${left === 1 ? '' : 's'} unflipped` : ''}` : 'cleared the command stack',
+        noUndo: true,
+      };
+    }
+
     case 'replaceBattle': {
       const nb = normalizeBattle(op.battle);
       return { battle: { ...nb, id: b.id, seq: b.seq, log: b.log }, text: `loaded battle "${nb.name}"` };

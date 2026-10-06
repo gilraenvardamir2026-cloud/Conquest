@@ -23,7 +23,7 @@ import {
   terrainPreset,
 } from './presets';
 import { characterPolygon, regimentPolygons, slotPolygon } from './regiment';
-import type { Battle, ObjectiveMarker, PlayerSeat, Regiment, Terrain, Zone } from './types';
+import type { Battle, CommandState, ObjectiveMarker, PlayerSeat, Regiment, Terrain, Zone } from './types';
 
 export function terrainPolygon(t: Terrain): Polygon {
   switch (t.shape.kind) {
@@ -117,6 +117,8 @@ export function scenarioZones(scenarioId: string, idPrefix: string): { zones: Zo
   };
 }
 
+export const emptyCommand = (): CommandState => ({ round: 0, locked: false, size: 0, revealed: [] });
+
 export function createBattle(opts: { id: string; name?: string; scenarioId?: string; layoutId?: string }): Battle {
   const s = opts.scenarioId ? scenarioById(opts.scenarioId) : undefined;
   const { zones, markers } = s ? scenarioZones(s.id, `${opts.id}-${s.id}`) : { zones: [], markers: [] };
@@ -144,6 +146,7 @@ export function createBattle(opts: { id: string; name?: string; scenarioId?: str
     markers: [],
     dice: [],
     measurements: [],
+    command: { p1: emptyCommand(), p2: emptyCommand() },
     settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
     log: [],
   };
@@ -254,6 +257,7 @@ export function normalizeBattle(b: Battle): Battle {
     measurements: b.measurements ?? [],
     markers: b.markers ?? [],
     dice: b.dice ?? [],
+    command: b.command ?? { p1: emptyCommand(), p2: emptyCommand() },
     log: b.log ?? [],
     settings: { ...DEFAULT_SETTINGS, ...JSON.parse(JSON.stringify(b.settings ?? {})) },
   };

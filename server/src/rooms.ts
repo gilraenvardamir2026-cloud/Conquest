@@ -11,7 +11,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { applyOp, createBattle, makeId, ROOM_CODE_ALPHABET, type Battle, type Op, type OpEnvelope, type PlayerSeat } from '@conquest/shared';
+import { applyOp, createBattle, makeId, normalizeBattle, ROOM_CODE_ALPHABET, type Battle, type CommandCard, type Op, type OpEnvelope, type PlayerSeat } from '@conquest/shared';
 
 export const SNAPSHOT_EVERY = 50;
 export const ROOM_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -46,6 +46,8 @@ interface Snapshot {
   seq: number;
   battle: Battle;
   history: HistoryEntry[];
+  /** Secret part of each command stack (cards not yet flipped, top first). */
+  stacks?: Partial<Record<PlayerSeat, CommandCard[]>>;
 }
 
 interface OpLine {
@@ -58,6 +60,8 @@ export class Room {
   seq: number;
   seats: Partial<Record<PlayerSeat, Seat>>;
   history: HistoryEntry[];
+  /** Secret part of each command stack; never in the battle, sent only to its seat. */
+  stacks: Partial<Record<PlayerSeat, CommandCard[]>>;
   recent: OpEnvelope[] = [];
   lastActivity: number;
   /** Set when a browser re-uploaded this room after the server lost it. */
@@ -70,8 +74,9 @@ export class Room {
     readonly code: string,
     readonly hostToken: string,
     readonly createdAt: number,
-    snap: Pick<Snapshot, 'battle' | 'seq' | 'seats' | 'history' | 'lastActivity'>,
+    snap: Pick<Snapshot, 'battle' | 'seq' | 'seats' | 'history' | 'lastActivity' | 'stacks'>,
   ) {
+    this.stacks = snap.stacks ?? {};
     this.battle = snap.battle;
     this.seq = snap.seq;
     this.seats = snap.seats;
@@ -147,6 +152,7 @@ export class Room {
       seq: this.seq,
       battle: this.battle,
       history: this.history,
+      stacks: this.stacks,
     };
   }
 
@@ -274,7 +280,7 @@ export class RoomStore {
     } catch {
       return null;
     }
-    const room = new Room(this, code, snap.hostToken, snap.createdAt, snap);
+    const room = new Room(this, code, snap.hostToken, snap.createdAt, { ...snap, battle: normalizeBattle(snap.battle) });
     // Replay operations written after the snapshot through the same reducer.
     let lines: string[] = [];
     try {

@@ -348,6 +348,51 @@ describe('room server', () => {
     b2.close();
   });
 
+  it('command stacks: the order stays secret until each card is flipped, and survives a restart', async () => {
+    const code = await newRoom();
+    const { c: a } = await join(code, T1, 'p1', 'Alice');
+    const { c: b } = await join(code, T2, 'p2', 'Bob');
+    const { c: s } = await join(code, T3);
+    for (const id of ['mil', 'bow', 'cav']) {
+      a.send({ t: 'op', id: `op-add-${id}`, op: { type: 'addRegiment', regiment: militia(id, 'p1') } });
+      await b.next((m) => m.t === 'op' && m.env.id === `op-add-${id}`);
+    }
+    const order = ['cav', 'mil', 'bow'];
+    a.send({ t: 'stack', action: { t: 'set', cards: order.map((id) => ({ kind: 'regiment', id })) } });
+    const mine = (await a.next((m) => m.t === 'stack' && m.cards.length > 0)) as Extract<ServerMsg, { t: 'stack' }>;
+    expect(mine.cards.map((x) => x.id)).toEqual(order);
+    a.send({ t: 'stack', action: { t: 'lock' } });
+    const lock = (await b.next((m) => m.t === 'op' && m.env.op.type === 'lockCommandStack')) as Extract<ServerMsg, { t: 'op' }>;
+    expect(lock.env.op).toEqual({ type: 'lockCommandStack', seat: 'p1', size: 3 });
+    // Bob may not touch Alice's stack (his actions only ever reach his own) and spectators have none.
+    b.send({ t: 'stack', action: { t: 'flip' } });
+    expect(((await b.next((m) => m.t === 'notice')) as { text: string }).text).toContain('Lock the stack first');
+    s.send({ t: 'stack', action: { t: 'flip' } });
+    expect(((await s.next((m) => m.t === 'notice')) as { text: string }).text).toContain('Spectators');
+
+    a.send({ t: 'stack', action: { t: 'flip' } });
+    const flip = (await b.next((m) => m.t === 'op' && m.env.op.type === 'revealCommandCard')) as Extract<ServerMsg, { t: 'op' }>;
+    expect(flip.env.op).toMatchObject({ seat: 'p1', card: { id: 'cav' } });
+    expect(flip.env.by).toBe('p1');
+
+    // Nothing Bob or the spectator received names the cards still hidden.
+    for (const c of [b, s]) {
+      expect(c.msgs.some((m) => m.t === 'stack' && m.cards.length > 0)).toBe(false);
+      expect(JSON.stringify(c.msgs).match(/"id":"(mil|bow)","name"/)).toBeNull();
+    }
+
+    // A restart keeps the secret order.
+    a.close();
+    b.close();
+    s.close();
+    await new Promise((r) => setTimeout(r, 100));
+    await app.close();
+    await start();
+    const { w } = await join(code, T1);
+    expect(w.stack!.map((x) => x.id)).toEqual(['mil', 'bow']);
+    expect(w.battle!.command.p1).toMatchObject({ round: 1, locked: true, size: 3 });
+  });
+
   it('wasSeat does nothing in a room that was not recovered', async () => {
     const code = await newRoom();
     const c = await connect(wsUrl);

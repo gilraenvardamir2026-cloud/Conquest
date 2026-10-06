@@ -8,6 +8,7 @@ import type {
   BattleSettings,
   Board,
   Character,
+  CommandCard,
   DiceRoll,
   FreeMarker,
   Location,
@@ -120,13 +121,29 @@ export type Op =
   // Dice: created by the server only (numbers are rolled there), never sent by clients.
   | { type: 'rollDice'; roll: DiceRoll }
   | { type: 'rerollDice'; id: string; indices: number[]; values: number[]; source: DiceRoll['source'] }
+  // Command stacks: created by the server only, which keeps the secret order.
+  | { type: 'lockCommandStack'; seat: PlayerSeat; size: number }
+  | { type: 'unlockCommandStack'; seat: PlayerSeat }
+  | { type: 'revealCommandCard'; seat: PlayerSeat; card: CommandCard }
+  | { type: 'unrevealCommandCard'; seat: PlayerSeat }
+  | { type: 'clearCommandStack'; seat: PlayerSeat }
   | { type: 'restore'; label: string; entries: RestoreEntry[] }
   | { type: 'replaceBattle'; battle: Battle };
 
 export type OpType = Op['type'];
 
 /** Operations only the server may create. */
-export const SERVER_ONLY_OPS: OpType[] = ['rollDice', 'rerollDice', 'restore', 'replaceBattle'];
+export const SERVER_ONLY_OPS: OpType[] = [
+  'rollDice',
+  'rerollDice',
+  'lockCommandStack',
+  'unlockCommandStack',
+  'revealCommandCard',
+  'unrevealCommandCard',
+  'clearCommandStack',
+  'restore',
+  'replaceBattle',
+];
 
 export interface OpEnvelope {
   /** Unique id chosen by the sender; also seeds ids the reducer creates. */

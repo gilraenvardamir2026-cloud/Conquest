@@ -8,9 +8,11 @@ import path from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
   authorize,
+  dealStack,
   makeId,
   normalizeBattle,
   normalizeRoomCode,
+  type CommandCard,
   type DiceRoll,
   type PlayerSeat,
   type Presence,
@@ -142,6 +144,10 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
   const spectators = (room: Room) => inRoom(room).filter((c) => !c.seat).length;
   const sendSeats = (room: Room) => broadcast(room, { t: 'seats', seats: seatsInfo(room), spectators: spectators(room) });
   const notice = (c: Client, text: string, kind: 'info' | 'error' = 'error') => send(c, { t: 'notice', text, kind });
+  /** A command stack's secret part goes only to the browsers holding that seat. */
+  const sendStack = (room: Room, seat: PlayerSeat) => {
+    for (const o of inRoom(room)) if (o.seat === seat) send(o, { t: 'stack', cards: room.stacks[seat] ?? [] });
+  };
 
   const takeToken = (c: Client) => {
     const now = Date.now();
@@ -226,6 +232,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
           seq: room.seq,
           ...(ops ? { ops } : { battle: room.battle }),
           dice: dice.status(),
+          ...(c.seat ? { stack: room.stacks[c.seat] ?? [] } : {}),
         });
         sendSeats(room);
         return;
@@ -249,6 +256,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
           if (room.battle.players[m.seat].name !== name) commit(c, room, room.apply({ type: 'updatePlayer', seat: m.seat, patch: { name } }, m.seat, `seat-${makeId(8)}`));
           void room.snapshotNow(); // seats must survive a crash
           for (const o of inRoom(room)) if (o.token === c.token) send(o, { t: 'you', seat: m.seat, isHost: room.hostToken === o.token });
+          sendStack(room, m.seat);
           sendSeats(room);
           return;
         }
@@ -277,6 +285,35 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
         case 'undo': {
           if (!c.seat) return notice(c, 'Spectators cannot undo');
           commit(c, room, room.undo(c.seat));
+          return;
+        }
+        case 'stack': {
+          if (!c.seat) return notice(c, 'Spectators have no command stack');
+          const seat = c.seat;
+          const d = dealStack(room.battle, seat, room.stacks[seat] ?? [], m.action);
+          if (!d.ok) return notice(c, d.error);
+          if (d.op && !commit(c, room, room.apply(d.op, seat, `stack-${makeId(10)}`))) return;
+          room.stacks[seat] = d.secret;
+          void room.snapshotNow(); // the secret order is not in the operation file
+          sendStack(room, seat);
+          return;
+        }
+        case 'stackRestore': {
+          // Only right after a recovery, and only into an empty slot.
+          if (!c.seat || !room.recoveredAt || Date.now() - room.recoveredAt > RECOVERY_SEAT_MS || room.stacks[c.seat]?.length) return;
+          const seat = c.seat;
+          const pub = room.battle.command[seat];
+          const units = [...room.battle.regiments.map((r) => ({ kind: 'regiment' as const, id: r.id, name: r.name, owner: r.owner })), ...room.battle.characters.map((x) => ({ kind: 'character' as const, id: x.id, name: x.name, owner: x.owner }))];
+          const cards: CommandCard[] = [];
+          for (const ref of m.cards) {
+            const u = units.find((x) => x.kind === ref.kind && x.id === ref.id && x.owner === seat);
+            if (!u || cards.some((x) => x.kind === u.kind && x.id === u.id)) return notice(c, 'Could not restore your command stack');
+            cards.push({ kind: u.kind, id: u.id, name: u.name });
+          }
+          if (pub.locked && cards.length !== pub.size - pub.revealed.length) return notice(c, 'Could not restore your command stack');
+          room.stacks[seat] = cards;
+          void room.snapshotNow();
+          sendStack(room, seat);
           return;
         }
         case 'presence': {
