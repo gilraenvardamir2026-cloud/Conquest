@@ -27,7 +27,8 @@ export interface Presence {
 }
 
 export type ClientMsg =
-  | { t: 'hello'; room: string; token: string; name?: string; lastSeq?: number }
+  /** wasSeat: the seat this browser held before the server lost the room (see /recover). */
+  | { t: 'hello'; room: string; token: string; name?: string; lastSeq?: number; wasSeat?: PlayerSeat }
   | { t: 'claim'; seat: PlayerSeat; name: string }
   | { t: 'op'; id: string; op: Op }
   | { t: 'undo' }

@@ -20,7 +20,7 @@ export function RoomOverlays() {
           {net.room === null ? (
             <>
               <h2>Room not found</h2>
-              <p>This battle does not exist or has expired (rooms are kept for 30 days after the last change).</p>
+              <p>This battle does not exist, or the server restarted and nobody who was playing is connected to restore it.</p>
               <a href="/">Back to the home page</a>
             </>
           ) : (
@@ -36,7 +36,11 @@ export function RoomOverlays() {
 
   return (
     <>
-      {net.status !== 'online' && <div className="disconnected">Disconnected — reconnecting… Changes are paused until the connection is back.</div>}
+      {net.status !== 'online' && (
+        <div className="disconnected" role="status">
+          {net.note ?? 'Disconnected — reconnecting…'} Changes are paused until the connection is back.
+        </div>
+      )}
       {!seat && !dismissed && net.status === 'online' && <SeatChooser onWatch={() => setDismissed(true)} />}
     </>
   );

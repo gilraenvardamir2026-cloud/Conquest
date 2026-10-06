@@ -54,7 +54,14 @@ function open(room: string) {
     retry = 0;
     const st = useStore.getState();
     const lastSeq = st.confirmed ? st.confirmed.seq : undefined;
-    send({ t: 'hello', room, token: browserToken(), name: savedName() || undefined, ...(lastSeq !== undefined ? { lastSeq } : {}) });
+    send({
+      t: 'hello',
+      room,
+      token: browserToken(),
+      name: savedName() || undefined,
+      ...(lastSeq !== undefined ? { lastSeq } : {}),
+      ...(st.seat ? { wasSeat: st.seat } : {}),
+    });
     clearInterval(pingTimer);
     pingTimer = setInterval(() => send({ t: 'ping' }), 25_000);
     lastPresence = '';
@@ -75,13 +82,48 @@ function open(room: string) {
     useStore.getState().setNet({ status: 'offline' });
     if (stopped) return;
     if (ev.code === 4004) {
-      // No such room: stay offline, the page shows the message.
-      useStore.getState().setNet({ status: 'offline', room: null });
+      void roomMissing(room);
       return;
     }
     const delay = Math.min(5000, 500 * 2 ** retry++);
     retryTimer = setTimeout(() => open(room), delay);
   };
+}
+
+/** Attempts left to wait for a seated player to restore a lost room. */
+let waitsLeft = 20;
+
+/**
+ * The server does not know the room. On a first visit that just means a bad
+ * link. If we were already playing, the server restarted and lost it: a
+ * seated player re-uploads its copy, anyone else waits for that to happen.
+ */
+async function roomMissing(room: string) {
+  const st = useStore.getState();
+  const notFound = () => useStore.getState().setNet({ status: 'offline', room: null });
+  if (!st.confirmed) return notFound();
+  if (st.seat) {
+    st.setNet({ note: 'The server restarted. Restoring the game from this browser…' });
+    try {
+      const res = await fetch(`/api/rooms/${room}/recover`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: browserToken(), seat: st.seat, name: st.confirmed.players[st.seat].name, battle: st.confirmed }),
+      });
+      // 409: someone else restored it first, which is just as good.
+      if (res.ok || res.status === 409) return open(room);
+      const why = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `error ${res.status}`;
+      useStore.getState().notify(`Could not restore the game: ${why}`);
+    } catch {
+      // Server unreachable again: try the whole thing once more shortly.
+      retryTimer = setTimeout(() => open(room), 2000);
+      return;
+    }
+    return notFound();
+  }
+  if (waitsLeft-- <= 0) return notFound();
+  st.setNet({ note: 'The server restarted. Waiting for a player to reconnect and restore the game…' });
+  retryTimer = setTimeout(() => open(room), 3000);
 }
 
 export function claimSeat(seat: 'p1' | 'p2', name: string) {

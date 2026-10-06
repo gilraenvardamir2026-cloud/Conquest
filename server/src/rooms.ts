@@ -60,6 +60,8 @@ export class Room {
   history: HistoryEntry[];
   recent: OpEnvelope[] = [];
   lastActivity: number;
+  /** Set when a browser re-uploaded this room after the server lost it. */
+  recoveredAt?: number;
   private opsSinceSnapshot = 0;
   private writeChain: Promise<void> = Promise.resolve();
 
@@ -87,7 +89,13 @@ export class Room {
   apply(op: Op, by: HistoryEntry['by'], id: string, opts: { isUndo?: boolean; now?: number } = {}): { env: OpEnvelope } | { error: string } {
     if (this.recent.some((e) => e.id === id)) return { error: 'Duplicate operation' };
     const env: OpEnvelope = { id, by, at: opts.now ?? Date.now(), seq: this.seq + 1, op };
-    const r = applyOp(this.battle, env);
+    let r: ReturnType<typeof applyOp>;
+    try {
+      r = applyOp(this.battle, env);
+    } catch (e) {
+      console.error(`room ${this.code}: ${op.type} failed`, e);
+      return { error: 'Server error: that action was not applied' };
+    }
     if (!r.ok) return { error: r.error };
     this.battle = r.battle;
     this.seq = env.seq!;
@@ -220,6 +228,31 @@ export class RoomStore {
     this.rooms.set(code, room);
     await room.snapshotNow();
     return room;
+  }
+
+  private recovering = new Set<string>();
+
+  /**
+   * Recreate a room the server lost (a restart without a persistent disk)
+   * from a seated player's copy. Returns null if the room exists after all or
+   * another browser is recovering it right now.
+   */
+  async recover(code: string, opts: { token: string; seat: PlayerSeat; name: string; battle: Battle }): Promise<Room | null> {
+    if (this.rooms.has(code) || this.loading.has(code) || this.recovering.has(code)) return null;
+    this.recovering.add(code);
+    try {
+      if (await this.get(code)) return null;
+      const now = Date.now();
+      const battle: Battle = { ...opts.battle, id: code };
+      const seats = { [opts.seat]: { token: opts.token, name: opts.name } };
+      const room = new Room(this, code, opts.token, now, { battle, seq: battle.seq, seats, history: [], lastActivity: now });
+      room.recoveredAt = now;
+      this.rooms.set(code, room);
+      await room.snapshotNow();
+      return room;
+    } finally {
+      this.recovering.delete(code);
+    }
   }
 
   /** The room, loaded from disk if needed; null if it does not exist. */

@@ -301,6 +301,61 @@ describe('room server', () => {
     expect(JSON.stringify(w.battle)).toBe(JSON.stringify(before));
   });
 
+  it('a room the server lost is restored from a seated player\'s copy; the other player gets their seat back', async () => {
+    const code = await newRoom();
+    const { c: a } = await join(code, T1, 'p1', 'Alice');
+    const { c: b } = await join(code, T2, 'p2', 'Bob');
+    a.send({ t: 'op', id: 'op-reg-02', op: { type: 'addRegiment', regiment: militia('mil', 'p1') } });
+    await b.next((m) => m.t === 'op' && m.env.id === 'op-reg-02');
+    const copy = (await (await fetch(`${base}/api/rooms/${code}/export`)).json()) as import('@conquest/shared').Battle;
+    a.close();
+    b.close();
+    // A restart without a persistent disk: everything is gone.
+    await app.close();
+    await rm(dir, { recursive: true, force: true });
+    await start();
+    const probe = await connect(wsUrl);
+    const closed = new Promise<number>((r) => probe.ws.on('close', (c) => r(c)));
+    probe.send({ t: 'hello', room: code, token: T1 });
+    expect(await closed).toBe(4004);
+
+    const recover = (body: unknown) => fetch(`${base}/api/rooms/${code}/recover`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    expect((await recover({ token: T1, seat: 'p1', battle: { ...copy, regiments: 'lots' } })).status).toBe(400);
+    const dangling = { ...copy, regiments: copy.regiments.map((r) => ({ ...r, characterId: 'ghost' })) };
+    expect((await recover({ token: T1, seat: 'p1', battle: dangling })).status).toBe(400);
+    expect((await recover({ token: T1, seat: 'p1', name: 'Alice', battle: copy })).status).toBe(200);
+    expect((await recover({ token: T2, seat: 'p2', name: 'Bob', battle: copy })).status).toBe(409);
+
+    const a2 = await connect(wsUrl);
+    a2.send({ t: 'hello', room: code, token: T1, lastSeq: copy.seq, wasSeat: 'p1' });
+    const wa = (await a2.next((m) => m.t === 'welcome')) as Extract<ServerMsg, { t: 'welcome' }>;
+    expect(wa.seat).toBe('p1');
+    expect(wa.isHost).toBe(true);
+    expect(wa.ops!.map((e) => e.op.type)).toEqual(['logNote']);
+    // Bob comes back: his seat is still free, so he gets it.
+    const b2 = await connect(wsUrl);
+    b2.send({ t: 'hello', room: code, token: T2, lastSeq: copy.seq, wasSeat: 'p2' });
+    const wb = (await b2.next((m) => m.t === 'welcome')) as Extract<ServerMsg, { t: 'welcome' }>;
+    expect(wb.seat).toBe('p2');
+    // Somebody else claiming to have been p2 is only a spectator.
+    const s3 = await connect(wsUrl);
+    s3.send({ t: 'hello', room: code, token: T3, wasSeat: 'p2' });
+    expect(((await s3.next((m) => m.t === 'welcome')) as Extract<ServerMsg, { t: 'welcome' }>).seat).toBeNull();
+    s3.close();
+    b2.send({ t: 'op', id: 'op-wound-1', op: { type: 'applyWounds', id: 'mil', count: 1 } });
+    await a2.next((m) => m.t === 'op' && m.env.id === 'op-wound-1');
+    a2.close();
+    b2.close();
+  });
+
+  it('wasSeat does nothing in a room that was not recovered', async () => {
+    const code = await newRoom();
+    const c = await connect(wsUrl);
+    c.send({ t: 'hello', room: code, token: T3, wasSeat: 'p1' });
+    expect(((await c.next((m) => m.t === 'welcome')) as Extract<ServerMsg, { t: 'welcome' }>).seat).toBeNull();
+    c.close();
+  });
+
   it('rate-limits and size-limits messages', async () => {
     const code = await newRoom();
     const { c: a } = await join(code, T1, 'p1');

@@ -138,6 +138,8 @@ export interface NetState {
   dice: DiceStatus | null;
   /** True once the first welcome arrived (the board is real). */
   ready: boolean;
+  /** Shown in the disconnected banner instead of the default text. */
+  note?: string;
 }
 
 /** Another person in the room, with what they are doing right now. */
@@ -429,7 +431,7 @@ export const useStore = create<AppState>((set, get) => ({
           pending: kept,
           seat: m.seat,
           peers: {},
-          net: { ...s.net, status: 'online', clientId: m.clientId, isHost: m.isHost, seats: m.seats, spectators: m.spectators, dice: m.dice, ready: true },
+          net: { ...s.net, status: 'online', note: undefined, clientId: m.clientId, isHost: m.isHost, seats: m.seats, spectators: m.spectators, dice: m.dice, ready: true },
         });
         for (const p of kept) sendToServer({ t: 'op', id: p.id, op: p.op });
         if (first) get().zoomToFit();

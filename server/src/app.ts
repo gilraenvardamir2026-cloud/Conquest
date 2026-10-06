@@ -9,6 +9,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import {
   authorize,
   makeId,
+  normalizeBattle,
   normalizeRoomCode,
   type DiceRoll,
   type PlayerSeat,
@@ -16,7 +17,7 @@ import {
   type ServerMsg,
   type SeatsInfo,
 } from '@conquest/shared';
-import { parseClientMsg } from '@conquest/shared/src/schema';
+import { parseClientMsg, parseRecoveredBattle } from '@conquest/shared/src/schema';
 import { DiceService } from './dice';
 import { Room, RoomStore } from './rooms';
 
@@ -27,6 +28,8 @@ const RATE_PER_SEC = 40;
 const RATE_BURST = 80;
 /** Presence updates relayed per connection per second (extra ones are dropped). */
 const PRESENCE_PER_SEC = 20;
+/** After a recovery, returning players get their old seat back for this long. */
+const RECOVERY_SEAT_MS = 15 * 60 * 1000;
 
 interface Client {
   id: string;
@@ -79,6 +82,26 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
     const room = code ? await store.get(code) : null;
     if (!room) return void res.status(404).json({ error: 'No such room' });
     res.json(room.battle);
+  });
+
+  // A seated player's browser re-uploads a room the server lost (restart
+  // without a persistent disk). 409 when the room exists: just reconnect.
+  app.post('/api/rooms/:code/recover', async (req, res) => {
+    const code = normalizeRoomCode(req.params.code);
+    const body = (req.body ?? {}) as { token?: unknown; seat?: unknown; name?: unknown; battle?: unknown };
+    const token = typeof body.token === 'string' && body.token.length >= 16 && body.token.length <= 64 ? body.token : null;
+    const seat = body.seat === 'p1' || body.seat === 'p2' ? body.seat : null;
+    if (!code || !token || !seat) return void res.status(400).json({ error: 'Room code, browser token and seat are required' });
+    if (await store.get(code)) return void res.status(409).json({ error: 'The room exists' });
+    const parsed = parseRecoveredBattle(body.battle);
+    if (!parsed.ok) return void res.status(400).json({ error: parsed.error });
+    const battle = normalizeBattle(parsed.battle);
+    const name = (typeof body.name === 'string' ? body.name.trim().slice(0, 40) : '') || battle.players[seat].name;
+    const room = await store.recover(code, { token, seat, name, battle });
+    if (!room) return void res.status(409).json({ error: 'The room exists' });
+    room.apply({ type: 'logNote', text: `The server restarted; the game was restored from ${name}'s browser.` }, 'system', `recover-${makeId(8)}`);
+    console.log(`room ${code}: recovered from ${seat} at seq ${battle.seq}`);
+    res.json({ code });
   });
 
   app.get('/api/dice', (_req, res) => res.json(dice.status()));
@@ -147,7 +170,15 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
     // Oversized or broken frames close the socket (1009 etc.); nothing else to do.
     ws.on('error', () => {});
 
-    ws.on('message', async (data, isBinary) => {
+    ws.on('message', (data, isBinary) => {
+      // A bug must cost one message, not the whole server.
+      onMessage(data, isBinary).catch((e) => {
+        console.error('message handler failed', e);
+        notice(c, 'Server error: that action was not applied');
+      });
+    });
+
+    const onMessage = async (data: import('ws').RawData, isBinary: boolean) => {
       if (isBinary) return notice(c, 'Binary messages are not accepted');
       if (!takeToken(c)) return; // over the rate limit: drop silently
       let raw: unknown;
@@ -176,6 +207,12 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
         c.room = room;
         c.token = m.token;
         c.seat = room.seatOf(m.token);
+        // Just recovered: hand a returning player the seat they had, if still free.
+        if (!c.seat && m.wasSeat && !room.seats[m.wasSeat] && room.recoveredAt && Date.now() - room.recoveredAt < RECOVERY_SEAT_MS && !Object.values(room.seats).some((x) => x?.token === m.token)) {
+          room.seats[m.wasSeat] = { token: m.token, name: (m.name ?? '').slice(0, 40) || room.battle.players[m.wasSeat].name };
+          c.seat = m.wasSeat;
+          void room.snapshotNow();
+        }
         if (c.seat) c.name = room.seats[c.seat]!.name;
         else if (m.name) c.name = m.name.slice(0, 40);
         const ops = m.lastSeq !== undefined ? room.opsSince(m.lastSeq) : null;
@@ -294,7 +331,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
           return;
         }
       }
-    });
+    };
 
     ws.on('close', () => {
       clients.delete(c);

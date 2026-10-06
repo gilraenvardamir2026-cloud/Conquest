@@ -1,11 +1,14 @@
 // Zod schemas for everything a client may send. The server parses every
 // incoming message with these before anything else touches it; unknown keys
 // are dropped and sizes are capped. Server-only operations (dice, restore,
-// replaceBattle) are not part of the client schema at all.
+// replaceBattle) are not part of the client schema at all. A whole battle is
+// only accepted when a browser re-uploads a room the server lost
+// (parseRecoveredBattle).
 
 import { z } from 'zod';
 import { TERRAIN_KEYWORDS } from './presets';
 import type { ClientMsg } from './protocol';
+import type { Battle } from './types';
 
 const coord = z.number().min(-1000).max(1000);
 const len = z.number().min(0).max(1000);
@@ -256,7 +259,7 @@ const presence = z
   .partial();
 
 export const clientMsgSchema = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('hello'), room: text(12), token: z.string().min(16).max(64), name: text(40).optional(), lastSeq: z.number().int().min(0).optional() }),
+  z.object({ t: z.literal('hello'), room: text(12), token: z.string().min(16).max(64), name: text(40).optional(), lastSeq: z.number().int().min(0).optional(), wasSeat: seat.optional() }),
   z.object({ t: z.literal('claim'), seat, name: text(40) }),
   z.object({ t: z.literal('op'), id: z.string().min(6).max(40), op: clientOpSchema }),
   z.object({ t: z.literal('undo') }),
@@ -267,6 +270,83 @@ export const clientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('freeSeat'), seat }),
   z.object({ t: z.literal('ping') }),
 ]);
+
+// ---------------------------------------------------------------------------
+// A whole battle (room recovery after a server restart)
+// ---------------------------------------------------------------------------
+
+const author = z.enum(['p1', 'p2', 'spectator', 'system']);
+const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+export const battleSchema = z.object({
+  id: text(64),
+  name: text(120),
+  version: z.number().int().min(1).max(100),
+  seq: z.number().int().min(0).max(1e9),
+  board: z.object({
+    width: z.number().min(1).max(200),
+    depth: z.number().min(1).max(200),
+    grid: z.union([z.literal(0), z.literal(1), z.literal(6), z.literal(12)]),
+    scenarioId: text(20).optional(),
+    noReinforcement: z.array(z.object({ edge: z.enum(['left', 'right']), from: coord, to: coord })).max(8),
+  }),
+  players: z.object({
+    p1: z.object({ name: text(40), color, connected: z.boolean() }),
+    p2: z.object({ name: text(40), color, connected: z.boolean() }),
+  }),
+  terrain: z.array(terrain.extend({ garrison: garrisonBlock.extend({ occupiedBy: id.optional() }).optional() })).max(200),
+  zones: z.array(zone).max(50),
+  objectiveMarkers: z.array(objectiveMarker).max(50),
+  regiments: z.array(regiment.extend({ characterId: id.optional(), characterSlot: slot.optional(), garrisonId: id.optional() })).max(200),
+  characters: z.array(character.extend({ attachedTo: id.optional() })).max(100),
+  markers: z.array(z.object({ id, label: text(40), x: coord, y: coord })).max(200),
+  dice: z
+    .array(
+      z.object({
+        id,
+        by: seat,
+        label: text(80),
+        at: z.number(),
+        results: z.array(z.number().int().min(1).max(6)).max(60),
+        target: z.number().int().min(1).max(6).optional(),
+        rerolled: z.array(z.boolean()).max(60),
+        source: z.enum(['random.org', 'local']),
+        kind: z.enum(['roll', 'rolloff']).optional(),
+        ties: z.array(z.tuple([z.number().int(), z.number().int()])).max(60).optional(),
+      }),
+    )
+    .max(50),
+  measurements: z.array(measurement).max(500),
+  settings: settingsPatch,
+  log: z.array(z.object({ id: text(64), seq: z.number().int().min(0), at: z.number(), by: author, kind: z.enum(['op', 'chat', 'dice', 'system']), text: text(2500) })).max(1000),
+});
+
+/**
+ * Check a battle a browser re-uploads: the shape, then that ids are unique
+ * and every cross-reference points at something that exists, so the reducer
+ * never meets a dangling id.
+ */
+export function parseRecoveredBattle(raw: unknown): { ok: true; battle: Battle } | { ok: false; error: string } {
+  const r = battleSchema.safeParse(raw);
+  if (!r.success) {
+    const first = r.error.issues[0];
+    return { ok: false, error: `Invalid battle${first ? `: ${first.path.join('.')} ${first.message}` : ''}` };
+  }
+  const b = r.data as unknown as Battle;
+  const ids = new Set<string>();
+  const unique = (xs: { id: string }[]) => xs.every((x) => !ids.has(x.id) && !!ids.add(x.id));
+  if (![b.terrain, b.zones, b.objectiveMarkers, b.regiments, b.characters, b.markers].every(unique)) return { ok: false, error: 'Invalid battle: repeated id' };
+  const regs = new Map(b.regiments.map((x) => [x.id, x]));
+  const chars = new Map(b.characters.map((x) => [x.id, x]));
+  const terr = new Map(b.terrain.map((x) => [x.id, x]));
+  for (const reg of b.regiments) {
+    if (reg.characterId && chars.get(reg.characterId)?.attachedTo !== reg.id) return { ok: false, error: `Invalid battle: ${reg.name}'s character` };
+    if (reg.garrisonId && terr.get(reg.garrisonId)?.garrison?.occupiedBy !== reg.id) return { ok: false, error: `Invalid battle: ${reg.name}'s garrison` };
+  }
+  for (const c of b.characters) if (c.attachedTo && regs.get(c.attachedTo)?.characterId !== c.id) return { ok: false, error: `Invalid battle: ${c.name}'s regiment` };
+  for (const t of b.terrain) if (t.garrison?.occupiedBy && regs.get(t.garrison.occupiedBy)?.garrisonId !== t.id) return { ok: false, error: `Invalid battle: ${t.name}'s garrison` };
+  return { ok: true, battle: b };
+}
 
 /** Parse a raw message; returns the cleaned message or an error string. */
 export function parseClientMsg(raw: unknown): { ok: true; msg: ClientMsg } | { ok: false; error: string } {
