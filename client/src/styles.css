@@ -1022,3 +1022,13 @@ a.button-link {
 .btn-col > button {
   text-align: left;
 }
+
+.army-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}

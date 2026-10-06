@@ -1,10 +1,10 @@
 // Left panel: one collapsible roster per player, grouped On board / Reserve / Destroyed.
 // Reserve rows can be dragged onto the board.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { REGIMENT_DEFAULTS, regimentCenter, STAND_TYPES, totalDamage, type Battle, type Location, type PlayerSeat, type StandType } from '@conquest/shared';
 import { useStore } from '../store';
-import { addCharacter, addRegiment } from './actions';
+import { addCharacter, addRegiment, lastArmy, loadArmy, readArmyFile, saveArmy } from './actions';
 import { NumberField } from '../ui/fields';
 
 const GROUPS: { loc: Location; title: string }[] = [
@@ -27,7 +27,10 @@ export function Roster() {
 function PlayerRoster({ seat, b }: { seat: PlayerSeat; b: Battle }) {
   const [open, setOpen] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [listMenu, setListMenu] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const selection = useStore((s) => s.selection);
+  const mine = useStore((s) => s.mode === 'local' || s.seat === seat || (!!s.seat && !!s.battle.settings.anyoneCanEdit));
   const { select, centreOn } = useStore.getState();
   const p = b.players[seat];
   const regs = b.regiments.filter((r) => r.owner === seat);
@@ -64,10 +67,61 @@ function PlayerRoster({ seat, b }: { seat: PlayerSeat; b: Battle }) {
       </header>
       {open && (
         <>
-          <div className="btn-row">
-            <button onClick={() => setAdding(!adding)}>+ Regiment</button>
-            <button onClick={() => addCharacter(b, seat)}>+ Character</button>
-          </div>
+          {mine && (
+            <div className="btn-row">
+              <button onClick={() => setAdding(!adding)}>+ Regiment</button>
+              <button onClick={() => addCharacter(b, seat)}>+ Character</button>
+              <button onClick={() => setListMenu(!listMenu)} aria-expanded={listMenu} title="Save this army to a file, or load a saved army list">
+                Army list…
+              </button>
+            </div>
+          )}
+          {mine && listMenu && (
+            <div className="army-menu" role="group" aria-label="Army list">
+              <button
+                onClick={() => {
+                  saveArmy(b, seat);
+                  setListMenu(false);
+                }}
+                title="Save these regiments and characters at full strength as a file"
+              >
+                Save to file
+              </button>
+              <button onClick={() => fileRef.current?.click()} title="Add a saved army list to the reserve">
+                Load from file…
+              </button>
+              {(() => {
+                const last = lastArmy();
+                return last ? (
+                  <button
+                    onClick={() => {
+                      loadArmy(useStore.getState().battle, seat, last);
+                      setListMenu(false);
+                    }}
+                    title="Add the army list loaded last in this browser to the reserve"
+                  >
+                    Load “{last.name}” again
+                  </button>
+                ) : null;
+              })()}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".json,application/json"
+                hidden
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!f) return;
+                  const army = await readArmyFile(f);
+                  if (army) {
+                    loadArmy(useStore.getState().battle, seat, army);
+                    setListMenu(false);
+                  }
+                }}
+              />
+            </div>
+          )}
           {adding && <NewRegimentForm seat={seat} b={b} onDone={() => setAdding(false)} />}
           {GROUPS.map(({ loc, title }) => {
             const rs = regs.filter((r) => r.location === loc);

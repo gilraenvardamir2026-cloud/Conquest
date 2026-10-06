@@ -1,11 +1,15 @@
 // Client-side helpers that build operations (new ids are chosen here, never in the reducer).
 
 import {
+  armyFromBattle,
+  armyOps,
   createRegiment,
   makeId,
   presetFor,
   REGIMENT_DEFAULTS,
   regimentLocalBox,
+  parseArmy,
+  type ArmyList,
   type Battle,
   type Character,
   type PlayerSeat,
@@ -110,4 +114,53 @@ export function downloadJson(filename: string, data: unknown) {
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const LAST_ARMY_KEY = 'conquest.army.last';
+
+/** The army list loaded last in this browser, if any. */
+export function lastArmy(): ArmyList | null {
+  try {
+    const raw = localStorage.getItem(LAST_ARMY_KEY);
+    const r = raw ? parseArmy(JSON.parse(raw)) : null;
+    return r?.ok ? r.army : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveArmy(b: Battle, seat: PlayerSeat) {
+  const list = armyFromBattle(b, seat);
+  if (!list.regiments.length && !list.characters.length) return useStore.getState().notify('Nothing to save: this army has no units yet');
+  downloadJson(`${list.name.replace(/[^\w-]+/g, '_')}.army.json`, list);
+}
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+/** Add an army list to a seat's reserve. */
+export function loadArmy(b: Battle, seat: PlayerSeat, army: ArmyList) {
+  const st = useStore.getState();
+  const has = b.regiments.some((r) => r.owner === seat) || b.characters.some((c) => c.owner === seat);
+  if (has && !confirm(`${b.players[seat].name} already has units. Add "${army.name}" to them?`)) return;
+  let added = 0;
+  for (const op of armyOps(army, seat, makeId)) if (dispatch(op)) added++;
+  if (!added) return;
+  try {
+    localStorage.setItem(LAST_ARMY_KEY, JSON.stringify(army));
+  } catch {
+    /* storage full or blocked: only the shortcut is lost */
+  }
+  st.notify(`Loaded "${army.name}": ${plural(army.regiments.length, 'regiment')} and ${plural(army.characters.length, 'character')} in reserve`);
+}
+
+/** Read an army list file chosen by the user. */
+export async function readArmyFile(file: File): Promise<ArmyList | null> {
+  try {
+    const r = parseArmy(JSON.parse(await file.text()));
+    if (r.ok) return r.army;
+    useStore.getState().notify(r.error);
+  } catch {
+    useStore.getState().notify('That file is not valid JSON');
+  }
+  return null;
 }
