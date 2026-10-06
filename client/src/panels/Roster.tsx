@@ -108,6 +108,7 @@ function PlayerRoster({ seat, b }: { seat: PlayerSeat; b: Battle }) {
                       draggable={loc === 'reserve'}
                       onDragStart={drag('character', c.id)}
                       onClick={() => pick('character', c.id)}
+                      title={loc === 'reserve' ? 'Drag onto one of your regiments to join it' : undefined}
                     >
                       <span className="name">★ {c.name}</span>
                       <span className="meta">

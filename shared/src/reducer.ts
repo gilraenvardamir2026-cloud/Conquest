@@ -599,6 +599,7 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
     case 'setCharacterLocation': {
       if (op.pose) checkPose(op.pose);
       const c0 = b.characters.find((c) => c.id === op.id) ?? fail('Character not found');
+      if (op.location === 'board') fail(`${c0.name} goes on the board by joining a regiment`);
       let out = c0.attachedTo ? detach(b, op.id) : b;
       out = updateCharacterAt(out, op.id, (c) => ({ ...c, location: op.location, ...(op.pose ?? {}) }));
       const where = { board: 'deployed to the board', reserve: 'sent to reserve', destroyed: 'marked destroyed' }[op.location];

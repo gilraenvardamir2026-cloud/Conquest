@@ -297,7 +297,7 @@ settings (⚙ = in the Settings dialog).
 
 ### Moving
 
-1. Select a regiment (or a lone character) and press **M**, or simply start
+1. Select a regiment and press **M**, or simply start
    dragging it. A faded ghost stays at the start position and the right panel
    lists each segment ("Wheel R 2.4"", "Forward 6.0"") with the running total
    against March, if set.

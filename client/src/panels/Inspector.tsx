@@ -34,7 +34,7 @@ import {
 } from '@conquest/shared';
 import { dispatch, useStore } from '../store';
 import { LengthField, NotesField, NumberField, Row, Section, TextField } from '../ui/fields';
-import { deployCharacter, deployRegiment, duplicateRegiment, duplicateTerrain } from './actions';
+import { deployRegiment, duplicateRegiment, duplicateTerrain } from './actions';
 import { BoardPanel } from './BoardPanel';
 import { StandGrid } from './StandGrid';
 import { MeasurePanel } from './MeasurePanel';
@@ -430,7 +430,6 @@ function CharacterInspector({ c, b, close }: { c: Character; b: Battle; close: R
           <span className={`loc loc-${c.location}`}>{c.attachedTo ? `With ${reg?.name ?? '?'}` : c.location === 'board' ? 'On board' : c.location === 'reserve' ? 'In reserve' : 'Destroyed'}</span>
         </div>
         <div className="btn-row">
-          {!c.attachedTo && c.location !== 'board' && <button onClick={() => deployCharacter(b, c)}>Deploy to edge</button>}
           {c.location !== 'reserve' && !c.attachedTo && <button onClick={() => dispatch({ type: 'setCharacterLocation', id: c.id, location: 'reserve' })}>To reserve</button>}
           {c.location !== 'destroyed' && <button onClick={() => dispatch({ type: 'setCharacterLocation', id: c.id, location: 'destroyed' })}>Mark destroyed</button>}
           <button

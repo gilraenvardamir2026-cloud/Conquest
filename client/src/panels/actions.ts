@@ -32,11 +32,6 @@ export function deployRegiment(b: Battle, r: Regiment) {
   useStore.getState().select({ kind: 'regiment', id: r.id });
 }
 
-export function deployCharacter(b: Battle, c: Character) {
-  dispatch({ type: 'setCharacterLocation', id: c.id, location: 'board', pose: edgePose(b, c.owner, c.standW, c.standD) });
-  useStore.getState().select({ kind: 'character', id: c.id });
-}
-
 export function addRegiment(
   b: Battle,
   p: { owner: PlayerSeat; name: string; standType: StandType; stands: number; files: number; wounds: number; w?: number; d?: number; size?: number },

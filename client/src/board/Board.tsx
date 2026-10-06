@@ -547,12 +547,8 @@ export function Board() {
       const target = battle.regiments.find(
         (r) => r.location === 'board' && !r.garrisonId && r.owner === c.owner && regimentPolygons(r).some((poly) => pointInPolygon(p, poly)),
       );
-      if (target) {
-        dispatch({ type: 'attachCharacter', characterId: id, regimentId: target.id });
-        return;
-      }
-      const pose = poseCentredAt(c.standW, c.standD, seatFacing(c.owner), p);
-      if (dispatch({ type: 'setCharacterLocation', id, location: 'board', pose: roundPose(pose) })) select({ kind: 'character', id });
+      if (target) dispatch({ type: 'attachCharacter', characterId: id, regimentId: target.id });
+      else useStore.getState().notify(`Drop ${c.name} on one of your regiments: characters never stand alone`);
     }
   };
 

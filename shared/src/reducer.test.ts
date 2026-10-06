@@ -169,6 +169,12 @@ describe('regiment ops', () => {
     expect(r.log.text).toContain('for the reserve');
   });
 
+  it('a character cannot be put on the board alone', () => {
+    const b = run(createBattle({ id: 'b' }), { type: 'addCharacter', character: hero });
+    const r = applyOp(b, env({ type: 'setCharacterLocation', id: 'hero', location: 'board', pose: { x: 10, y: 10, angle: 0 } }));
+    expect(r.ok).toBe(false);
+  });
+
   it('a character moving to another regiment leaves the old one reformed', () => {
     const other = { ...militia(), id: 'mil2', name: 'Militia II', x: 60 };
     let b = run(createBattle({ id: 'b' }), { type: 'addRegiment', regiment: militia() }, { type: 'addRegiment', regiment: other }, { type: 'addCharacter', character: hero });
