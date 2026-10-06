@@ -13,3 +13,4 @@ export * from './auth';
 export * from './protocol';
 export * from './army';
 export * from './command';
+export * from './drand';

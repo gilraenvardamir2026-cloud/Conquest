@@ -9,7 +9,8 @@ exactly as with miniatures and a tape measure.
 
 The project was built in five milestones, **all complete**: two players on
 different computers share a room by link, with spectators, live presence,
-server-rolled dice, army lists, and a container ready for a free host
+server-rolled dice that anyone can check against the public drand beacon,
+command stacks with hidden order, army lists, and a container ready for a free host
 ([deploy guide](docs/DEPLOY.md)).
 
 | # | Milestone | State |
@@ -17,7 +18,7 @@ server-rolled dice, army lists, and a container ready for a free host
 | 1 | Foundations: shared types, reducer, geometry + tests, board, scenarios, terrain, regiments, characters, wounds, objective markers | done |
 | 2 | Movement and measuring (move sessions, handles, ruler, distances, range rings, contact, Align to target) | done |
 | 3 | Facing arcs and line of sight | done |
-| 4 | Multiplayer (server, rooms, seats, presence, persistence) and RANDOM.ORG dice | done |
+| 4 | Multiplayer (server, rooms, seats, presence, persistence) and server dice | done |
 | 5 | Room recovery, army lists, shortcuts and help, accessibility pass, Dockerfile, deploy guide | done |
 
 ## Run locally
@@ -44,9 +45,11 @@ Server settings (environment variables):
 |---|---|---|
 | `PORT` | 3001 | Port to listen on |
 | `DATA_DIR` | `./data` | Folder for room files (a persistent disk is optional: see Persistence) |
-| `RANDOM_ORG_API_KEY` | — | RANDOM.ORG key; without it dice use Node's `crypto` fallback |
+| `DICE_SOURCE` | `drand` (or `random.org` when a key is set) | Where dice come from: `drand`, `random.org` or `local` (Node's `crypto`) |
+| `RANDOM_ORG_API_KEY` | — | Optional RANDOM.ORG key; when set, dice come from RANDOM.ORG instead of drand |
 
-For example `RANDOM_ORG_API_KEY=your-key npm run dev`. Never commit the key
+No key is needed: by default dice come from drand, a free public randomness
+beacon. For RANDOM.ORG instead, `RANDOM_ORG_API_KEY=your-key npm run dev`. Never commit the key
 (`.env` is git-ignored); it stays on the server and is never sent to browsers.
 
 **Putting it online:** [docs/DEPLOY.md](docs/DEPLOY.md) walks through Render's
@@ -75,7 +78,7 @@ shared/   Pure TypeScript, no DOM. Used by the client now and the server later.
   src/army.ts       Army lists: save a seat's units, check a file, turn it into operations
 client/   Vite + React + TypeScript, Zustand store, SVG board, net.ts (room socket)
 server/   Node + Express + ws: app.ts (API + WebSocket), rooms.ts (authority,
-          undo, JSON persistence), dice.ts (RANDOM.ORG pool + fallback)
+          undo, JSON persistence), dice.ts (drand or RANDOM.ORG, local fallback)
 ```
 
 ## Architecture
@@ -286,6 +289,15 @@ settings (⚙ = in the Settings dialog).
     undoable operation. It is refused, with the reason, if a later operation
     (other than undone ones) touched the same object.
 32. **Dice** are rolled on the server; results are shown sorted (low to high).
+    By default each roll waits for the next round of drand's quicknet chain
+    (one every 3 s, so a roll takes up to 3 s) and derives the dice from that
+    round's randomness with the rule in `shared/src/drand.ts`, keyed by the
+    roll id. The roll records the round, key and dice of every draw (re-rolls
+    and roll-off ties are draws of their own); *Check* in the tray fetches
+    those rounds from drand in the viewer's browser and recomputes them. The
+    server checks that each beacon's randomness is SHA-256 of its signature;
+    it does not verify the BLS signature itself. If drand does not answer
+    within 6 s the roll falls back to the server's own random numbers.
     Only the player who rolled can re-roll, each die once. A roll-off rolls one
     die per player and re-rolls ties automatically (they are listed). If any
     die of a roll or re-roll came from the local fallback, the roll is marked
@@ -381,7 +393,8 @@ settings (⚙ = in the Settings dialog).
   room, the first seated player's browser restores it automatically.
 - **Dice (X)**: number of dice (1–60), optional label and "success on ≤ X".
   Results reach both players at once, sorted, with the success count, the
-  roller's colour and the source (RANDOM.ORG or local). Tick dice to re-roll
+  roller's colour and the source (drand with its round, RANDOM.ORG, or local).
+  *Check* on a drand roll recomputes it from drand in your browser. Tick dice to re-roll
   them (once each). *Roll-off* gives one die per player, lowest highlighted.
   The tray keeps the last 20 rolls; every roll is in the log.
 

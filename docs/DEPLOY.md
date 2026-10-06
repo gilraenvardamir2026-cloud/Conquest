@@ -35,12 +35,8 @@ server is up.
 2. Pick the `conquest` repository.
 3. Choose the **branch** to deploy. The work is currently on
    `claude/exciting-mccarthy-7bkteh`; once it is merged, use `main`.
-4. Render shows one service, **conquest-tabletop**, on the **Free** plan, and
-   asks for a value for `RANDOM_ORG_API_KEY`.
-   - Have a key? Paste it here (see step 3 below).
-   - No key yet? Leave it empty. Dice then use the server's own secure random
-     numbers and are marked "local" in the dice tray. You can add the key
-     later.
+4. Render shows one service, **conquest-tabletop**, on the **Free** plan.
+   There is nothing to fill in (dice need no key, see step 3).
 5. Choose **Apply** (or **Deploy Blueprint**).
 
 The first build takes about 5 minutes. When the status turns **Live**, the
@@ -49,26 +45,22 @@ Conquest Tabletop home page.
 
 *Prefer clicking through by hand?* **New → Web Service**, pick the repository
 and branch, set **Language** to **Docker**, **Instance Type** to **Free**,
-**Health Check Path** to `/healthz`, and add the environment variable
-`RANDOM_ORG_API_KEY` under **Environment**. The result is the same.
+and **Health Check Path** to `/healthz`. The result is the same.
 
-## 3. RANDOM.ORG dice (optional)
+## 3. Dice (nothing to set up)
 
-1. Create an account at [api.random.org](https://api.random.org) and open
-   **API Keys → Create a new key**. The free **Developer** key allows 1,000
-   requests a day. The server fetches 300 dice per request, so that is far
-   more than a game needs. RANDOM.ORG describes the free key as meant for
-   development and testing; check their
-   [pricing page](https://api.random.org/pricing) if you want a licence for
-   regular play.
-2. In Render, open the service → **Environment** → edit
-   `RANDOM_ORG_API_KEY` → paste the key → **Save, rebuild and deploy**.
-3. Check it: open a game → **Settings**. Under *Dice* it says RANDOM.ORG is
-   configured and how many requests are left today. Each roll in the tray
-   shows its source.
+Dice come from [drand](https://drand.love), a free public randomness beacon
+run by Cloudflare, universities and others. There is no account and no key.
+Each roll waits for drand's next number (at most 3 seconds) and records which
+one it used; the **Check** button in the dice tray lets either player confirm
+the dice in their own browser. If drand cannot be reached, the server uses its
+own random numbers and marks those rolls *local*.
 
-Keep the key only in Render. Never put it in the code, in a chat or in an
-issue. It never reaches the players' browsers.
+*Prefer RANDOM.ORG?* Create a key at [api.random.org](https://api.random.org)
+(**API Keys → Create a new key**), then in Render open the service →
+**Environment** → add `RANDOM_ORG_API_KEY` → **Save, rebuild and deploy**.
+Keep the key only in Render, never in the code or a chat. To keep every roll
+on the server instead, set `DICE_SOURCE` to `local`.
 
 ## 4. Play
 
@@ -94,7 +86,7 @@ server in the middle of your game. To update:
 |---|---|
 | The page loads for about a minute | The server was asleep. Wait; it is waking up. |
 | "Room not found" when opening an old link | The server slept or restarted after everyone left. Create a new battle (load your army lists again). |
-| Dice say "local" although a key is set | Look at Settings → Dice for the reason: usually the daily limit is used up, or the key was mistyped. Dice keep working from the local source meanwhile. |
+| Dice say "local" | Settings → Dice shows the reason (drand unreachable, or a RANDOM.ORG problem). Dice keep working from the server's own random numbers meanwhile. |
 | The deploy failed | Render → service → **Logs** shows the error. **Manual Deploy → Clear build cache & deploy** fixes most one-off failures. |
 | The server keeps restarting | Check **Logs**. The free plan has 512 MB of memory; one game uses only a few MB. |
 
@@ -104,7 +96,7 @@ Anywhere Docker runs:
 
 ```sh
 docker build -t conquest .
-docker run -p 3001:3001 -e RANDOM_ORG_API_KEY=your-key conquest
+docker run -p 3001:3001 conquest
 ```
 
 Then open http://localhost:3001. Rooms are kept in `/data` inside the

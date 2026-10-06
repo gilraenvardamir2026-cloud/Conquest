@@ -1201,3 +1201,27 @@ a.button-link {
 .add-reserve select {
   max-width: 130px;
 }
+
+.src.drand {
+  color: #1f4f8a;
+}
+.src-wrap .src {
+  margin-left: 0;
+}
+.src-wrap {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.verified {
+  color: #1d6b34;
+  font-weight: 600;
+}
+.unverified {
+  color: var(--danger);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

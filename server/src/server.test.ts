@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import WebSocket from 'ws';
-import { createRegiment, STAND_PRESETS, type ServerMsg } from '@conquest/shared';
+import { createHash } from 'node:crypto';
+import { createRegiment, diceFromRandomness, roundTime, STAND_PRESETS, type DrandBeacon, type ServerMsg } from '@conquest/shared';
 import { createApp } from './app';
 import { DiceService, type RandomOrgClient } from './dice';
 import { SNAPSHOT_EVERY } from './rooms';
@@ -67,6 +68,53 @@ describe('dice service', () => {
     expect(served).toBe(2);
     expect(d.status().pool).toBe(355);
     expect(d.status().requestsLeft).toBe(999);
+  });
+});
+
+describe('drand dice', () => {
+  const timing = { genesis: 1_000, period: 3 };
+  const beacon = (round: number): DrandBeacon => {
+    const signature = createHash('sha256').update(`s${round}`).digest('hex');
+    return { round, signature, randomness: createHash('sha256').update(Buffer.from(signature, 'hex')).digest('hex') };
+  };
+
+  it('waits for the next round, derives the dice from it and records the draw', async () => {
+    const asked: number[] = [];
+    const slept: number[] = [];
+    const now = roundTime(500, timing) + 1_000; // 1 s into round 500
+    const d = new DiceService({
+      client: null,
+      drand: { timing: async () => timing, beacon: async (r) => (asked.push(r), beacon(r)) },
+      now: () => now,
+      sleep: async (ms) => void slept.push(ms),
+    });
+    const r = await d.roll(5, 'roll-1');
+    expect(asked).toEqual([501]);
+    expect(slept[0]).toBe(2_000 + 100);
+    expect(r.source).toBe('drand');
+    expect(r.draw).toEqual({ round: 501, key: 'roll-1', values: r.values });
+    expect(r.values).toEqual(await diceFromRandomness(beacon(501).randomness, 'roll-1', 5));
+    expect(d.status()).toMatchObject({ source: 'drand', lastRound: 501 });
+  });
+
+  it('retries a slow relay, then falls back to local dice', async () => {
+    let calls = 0;
+    const flaky = new DiceService({
+      client: null,
+      drand: { timing: async () => timing, beacon: async (r) => (++calls < 3 ? Promise.reject(new Error('425 too early')) : beacon(r)) },
+      sleep: async () => {},
+    });
+    expect((await flaky.roll(2, 'x')).source).toBe('drand');
+    const dead = new DiceService({
+      client: null,
+      drand: { timing: async () => timing, beacon: async () => Promise.reject(new Error('unreachable')) },
+      drandTimeoutMs: 50,
+      sleep: (ms) => new Promise((res) => setTimeout(res, Math.min(ms, 5))),
+    });
+    const r = await dead.roll(3, 'y');
+    expect(r.source).toBe('local');
+    expect(r.values).toHaveLength(3);
+    expect(dead.status().lastError).toContain('did not arrive');
   });
 });
 

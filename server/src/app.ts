@@ -14,6 +14,7 @@ import {
   normalizeRoomCode,
   type CommandCard,
   type DiceRoll,
+  type DrandDraw,
   type PlayerSeat,
   type Presence,
   type ServerMsg,
@@ -327,9 +328,10 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
         }
         case 'roll': {
           if (!c.seat) return notice(c, 'Spectators cannot roll');
-          const r = await dice.roll(m.count);
+          const id = makeId(10);
+          const r = await dice.roll(m.count, id);
           const roll: DiceRoll = {
-            id: makeId(10),
+            id,
             by: c.seat,
             label: m.label.trim(),
             at: Date.now(),
@@ -337,6 +339,7 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
             ...(m.target ? { target: m.target } : {}),
             rerolled: r.values.map(() => false),
             source: r.source,
+            ...(r.draw ? { proof: [r.draw] } : {}),
             kind: 'roll',
           };
           commit(c, room, room.apply({ type: 'rollDice', roll }, c.seat, `roll-${roll.id}`));
@@ -349,23 +352,38 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
           if (roll.by !== c.seat) return notice(c, 'Only the player who rolled can re-roll');
           if (roll.kind === 'rolloff') return notice(c, 'A roll-off cannot be re-rolled');
           if (m.indices.some((i) => roll.rerolled[i])) return notice(c, 'A die can be re-rolled only once');
-          const r = await dice.roll(m.indices.length);
-          commit(c, room, room.apply({ type: 'rerollDice', id: roll.id, indices: m.indices, values: r.values, source: r.source }, c.seat, `reroll-${makeId(10)}`));
+          const r = await dice.roll(m.indices.length, `${roll.id}/r-${makeId(6)}`);
+          commit(c, room, room.apply({ type: 'rerollDice', id: roll.id, indices: m.indices, values: r.values, source: r.source, ...(r.draw ? { proof: r.draw } : {}) }, c.seat, `reroll-${makeId(10)}`));
           return;
         }
         case 'rolloff': {
           if (!c.seat) return notice(c, 'Spectators cannot roll');
+          const id = makeId(10);
           const ties: [number, number][] = [];
+          const proof: DrandDraw[] = [];
           let pair: number[] = [];
-          let source: 'random.org' | 'local' = 'random.org';
+          let source: DiceRoll['source'] | null = null;
           for (let i = 0; i < 50; i++) {
-            const r = await dice.roll(2);
-            if (r.source === 'local') source = 'local';
+            const r = await dice.roll(2, `${id}/t${i}`);
+            // Mixed sources count as the weakest one.
+            source = source === 'local' || r.source === 'local' ? 'local' : r.source;
+            if (r.draw) proof.push(r.draw);
             pair = r.values;
             if (pair[0] !== pair[1]) break;
             ties.push([pair[0], pair[1]]);
           }
-          const roll: DiceRoll = { id: makeId(10), by: c.seat, label: 'Roll-off', at: Date.now(), results: pair, rerolled: [false, false], source, kind: 'rolloff', ...(ties.length ? { ties } : {}) };
+          const roll: DiceRoll = {
+            id,
+            by: c.seat,
+            label: 'Roll-off',
+            at: Date.now(),
+            results: pair,
+            rerolled: [false, false],
+            source: source ?? 'local',
+            kind: 'rolloff',
+            ...(ties.length ? { ties } : {}),
+            ...(source === 'drand' ? { proof } : {}),
+          };
           commit(c, room, room.apply({ type: 'rollDice', roll }, c.seat, `roll-${roll.id}`));
           return;
         }

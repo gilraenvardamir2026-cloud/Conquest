@@ -1,5 +1,5 @@
-# Render Blueprint: New → Blueprint, pick this repository, then fill in
-# RANDOM_ORG_API_KEY when asked (or leave it empty for local dice).
+# Render Blueprint: New → Blueprint, pick this repository, Apply.
+# Dice come from the drand public beacon, so there is nothing to fill in.
 services:
   - type: web
     name: conquest-tabletop
@@ -7,6 +7,3 @@ services:
     plan: free
     healthCheckPath: /healthz
     autoDeploy: false
-    envVars:
-      - key: RANDOM_ORG_API_KEY
-        sync: false

@@ -2,6 +2,7 @@
 // pure reducer in reducer.ts so that every client (and later the server)
 // computes identical state from the same sequence.
 
+import type { DrandDraw } from './drand';
 import type {
   Author,
   Battle,
@@ -120,7 +121,7 @@ export type Op =
   | { type: 'logNote'; text: string }
   // Dice: created by the server only (numbers are rolled there), never sent by clients.
   | { type: 'rollDice'; roll: DiceRoll }
-  | { type: 'rerollDice'; id: string; indices: number[]; values: number[]; source: DiceRoll['source'] }
+  | { type: 'rerollDice'; id: string; indices: number[]; values: number[]; source: DiceRoll['source']; proof?: DrandDraw }
   // Command stacks: created by the server only, which keeps the secret order.
   | { type: 'lockCommandStack'; seat: PlayerSeat; size: number }
   | { type: 'unlockCommandStack'; seat: PlayerSeat }

@@ -1,3 +1,5 @@
+import type { DrandDraw } from './drand';
+
 // Battle document types. The whole battle is one JSON document; every change
 // is a typed operation (see ops.ts) applied by a pure reducer.
 //
@@ -179,7 +181,9 @@ export interface DiceRoll {
   /** Per die: true once re-rolled (each die can be re-rolled only once). */
   rerolled: boolean[];
   /** Where the numbers came from; 'local' if any die (re-rolls included) used the local fallback. */
-  source: 'random.org' | 'local';
+  source: 'random.org' | 'drand' | 'local';
+  /** drand rolls: the round, key and dice of every draw (the roll, each re-roll, roll-off ties), for checking. */
+  proof?: DrandDraw[];
   /** A roll-off: results[0] is Player 1's die, results[1] Player 2's. */
   kind?: 'roll' | 'rolloff';
   /** Roll-off pairs that tied and were re-rolled automatically. */

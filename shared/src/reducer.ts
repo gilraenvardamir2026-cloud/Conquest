@@ -10,6 +10,7 @@ import { bounds, localToWorld } from './geometry';
 import { engagedStandIds, layoutTerrain, normalizeBattle, scenarioZones, terrainPolygon } from './board';
 import { scenarioById } from './presets';
 import { MAX_STACK } from './command';
+import type { DrandDraw } from './drand';
 import {
   allocateWounds,
   closeGap,
@@ -43,7 +44,7 @@ function describeRoll(r: DiceRoll): string {
     const ties = r.ties?.length ? ` after ${plural(r.ties.length, 'tie')} (${r.ties.map((t) => t.join('–')).join(', ')})` : '';
     return `roll-off: Player 1 ${r.results[0]}, Player 2 ${r.results[1]}${ties} (${r.source})`;
   }
-  return `rolled ${diceWord(r.results.length)}${r.label ? ` for "${r.label}"` : ''}: ${r.results.join(', ')} (${r.source})${successText(r)}`;
+  return `rolled ${diceWord(r.results.length)}${r.label ? ` for "${r.label}"` : ''}: ${r.results.join(', ')} (${sourceText(r.source, r.proof?.[0])})${successText(r)}`;
 }
 
 export type ApplyResult =
@@ -99,6 +100,15 @@ function authorName(b: Battle, by: Author): string {
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const sourceText = (source: DiceRoll['source'], draw?: DrandDraw) => (source === 'drand' && draw ? `drand round ${draw.round}` : source);
+
+/** A drand draw as recorded on a roll: sane numbers only. */
+function checkDraw(d: DrandDraw): DrandDraw {
+  if (!Number.isInteger(d.round) || d.round < 1 || typeof d.key !== 'string' || d.key.length > 100) fail('Invalid drand draw');
+  if (!Array.isArray(d.values) || d.values.length > 60 || d.values.some((n) => !Number.isInteger(n) || n < 1 || n > 6)) fail('Invalid drand draw');
+  return { round: d.round, key: d.key, values: d.values.slice() };
+}
+
 const diceWord = (n: number) => `${n} ${n === 1 ? 'die' : 'dice'}`;
 
 // ---------------------------------------------------------------------------
@@ -687,6 +697,7 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
       const r = op.roll;
       if (b.dice.some((d) => d.id === r.id)) fail('Duplicate roll');
       if (!r.results.length || r.results.length > 60 || r.results.some((n) => !Number.isInteger(n) || n < 1 || n > 6)) fail('Invalid dice');
+      r.proof?.forEach(checkDraw);
       const dice = [...b.dice, { ...r, rerolled: r.results.map(() => false) }].slice(-DICE_KEPT);
       return { battle: { ...b, dice }, text: describeRoll(r), kind: 'dice', noUndo: true };
     }
@@ -707,11 +718,17 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
         results[k] = op.values[j];
         rerolled[k] = true;
       });
-      const nr: DiceRoll = { ...r0, results, rerolled, source: op.source === 'local' ? 'local' : r0.source };
+      const nr: DiceRoll = {
+        ...r0,
+        results,
+        rerolled,
+        source: op.source === 'local' ? 'local' : r0.source,
+        ...(op.proof ? { proof: [...(r0.proof ?? []), checkDraw(op.proof)] } : {}),
+      };
       const before = op.indices.map((k) => r0.results[k]).join(', ');
       return {
         battle: { ...b, dice: setAt(b.dice, i, nr) },
-        text: `re-rolled ${diceWord(op.indices.length)} of "${r0.label || 'roll'}": ${before} → ${op.values.join(', ')} (${op.source})${successText(nr)}`,
+        text: `re-rolled ${diceWord(op.indices.length)} of "${r0.label || 'roll'}": ${before} → ${op.values.join(', ')} (${sourceText(op.source, op.proof)})${successText(nr)}`,
         kind: 'dice',
         noUndo: true,
       };

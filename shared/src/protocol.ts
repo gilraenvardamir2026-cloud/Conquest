@@ -52,6 +52,8 @@ export interface SeatInfo {
 export type SeatsInfo = Record<PlayerSeat, SeatInfo>;
 
 export interface DiceStatus {
+  /** Where dice come from when all is well. */
+  source?: 'random.org' | 'drand' | 'local';
   /** A RANDOM.ORG API key is set on the server. */
   configured: boolean;
   /** Dice waiting in the server-side pool. */
@@ -60,6 +62,8 @@ export interface DiceStatus {
   requestsLeft?: number;
   checkedAt?: number;
   lastError?: string;
+  /** drand: the round of the last roll. */
+  lastRound?: number;
 }
 
 export type ServerMsg =

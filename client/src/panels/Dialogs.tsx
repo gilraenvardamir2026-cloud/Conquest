@@ -146,11 +146,16 @@ function OnlineSettings() {
             <>
               RANDOM.ORG key set · {d.pool} dice in the pool
               {d.requestsLeft !== undefined ? ` · today left: ${d.requestsLeft} requests, ${d.bitsLeft} bits` : ''}
-              {d.lastError ? ` · last problem: ${d.lastError} (using the local fallback meanwhile)` : ''}
+            </>
+          ) : d.source === 'drand' ? (
+            <>
+              From the drand public randomness beacon: each roll waits for the next round (up to 3 seconds) and can be checked with its <i>Check</i> button
+              {d.lastRound ? ` · last round ${d.lastRound}` : ''}
             </>
           ) : (
-            'No RANDOM.ORG key on the server: dice use the local fallback (Node crypto).'
+            "From the server's own random numbers (Node crypto)."
           )}
+          {d.lastError ? ` · last problem: ${d.lastError} (the server's own random numbers are used meanwhile)` : ''}
         </p>
       ) : (
         <p className="muted small">Dice status unknown.</p>

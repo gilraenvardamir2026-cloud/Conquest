@@ -1,9 +1,10 @@
-// Shared dice tray. Online, every roll happens on the server (RANDOM.ORG with
-// a local fallback) and reaches both players at the same moment; offline it
-// rolls in the browser. The tray keeps the last 20 rolls.
+// Shared dice tray. Online, every roll happens on the server (from the drand
+// public beacon, or RANDOM.ORG when a key is set, with a local fallback) and
+// reaches both players at the same moment; offline it rolls in the browser.
+// The tray keeps the last 20 rolls.
 
 import { useState } from 'react';
-import { makeId, type Battle, type DiceRoll } from '@conquest/shared';
+import { makeId, verifyDraws, type Battle, type DiceRoll } from '@conquest/shared';
 import { rerollDice, rollDice, rollOff } from '../net';
 import { useStore } from '../store';
 import { NumberField } from '../ui/fields';
@@ -93,6 +94,53 @@ export function DiceTray() {
   );
 }
 
+const SOURCE_TITLE: Record<DiceRoll['source'], string> = {
+  'random.org': 'True random numbers from RANDOM.ORG',
+  drand: 'From the drand public randomness beacon: Check recomputes these dice in your browser',
+  local: "Rolled with the server's (or, offline, this browser's) own random numbers",
+};
+
+/** Where the dice came from; drand rolls can be checked against the public beacon from this browser. */
+function SourceTag({ r }: { r: DiceRoll }) {
+  const [check, setCheck] = useState<'idle' | 'busy' | 'ok' | string>('idle');
+  const label = r.source === 'random.org' ? 'RANDOM.ORG' : r.source === 'drand' ? `drand #${r.proof?.[0]?.round ?? '?'}` : 'local';
+  const run = async () => {
+    if (!r.proof?.length) return;
+    setCheck('busy');
+    try {
+      const why = await verifyDraws(r.proof);
+      setCheck(why ?? 'ok');
+    } catch (e) {
+      const msg = String((e as Error).message ?? e);
+      setCheck(msg.includes('failed its check') ? "drand's answer failed its check" : `could not reach drand (${msg})`);
+    }
+  };
+  return (
+    <span className="src-wrap">
+      <span className={`src ${r.source}`} title={SOURCE_TITLE[r.source]}>
+        {label}
+      </span>
+      {r.source === 'drand' && r.proof?.length ? (
+        check === 'idle' ? (
+          <button className="link small" onClick={run} title={`Fetch round${r.proof.length > 1 ? 's' : ''} ${r.proof.map((p) => p.round).join(', ')} from drand and recompute`}>
+            Check
+          </button>
+        ) : check === 'busy' ? (
+          <span className="muted small">checking…</span>
+        ) : check === 'ok' ? (
+          <span className="small verified" role="status">
+            ✓ matches drand
+          </span>
+        ) : (
+          <span className="small unverified" role="status" title={check}>
+            ✗ {check}
+          </span>
+        )
+      ) : null}
+    </span>
+  );
+}
+
 function RollCard({ r, b, mine, canReroll, online }: { r: DiceRoll; b: Battle; mine: boolean; canReroll: boolean; online: boolean }) {
   const [picked, setPicked] = useState<number[]>([]);
   const color = b.players[r.by].color;
@@ -109,7 +157,7 @@ function RollCard({ r, b, mine, canReroll, online }: { r: DiceRoll; b: Battle; m
     return (
       <div className="roll" style={{ borderLeftColor: color }}>
         <div className="roll-head">
-          <b>Roll-off</b> <span className={`src ${r.source}`}>{r.source === 'random.org' ? 'RANDOM.ORG' : 'local'}</span>
+          <b>Roll-off</b> <SourceTag r={r} />
         </div>
         <div className="faces">
           {(['p1', 'p2'] as const).map((s, i) => (
@@ -133,9 +181,7 @@ function RollCard({ r, b, mine, canReroll, online }: { r: DiceRoll; b: Battle; m
     <div className="roll" style={{ borderLeftColor: color }}>
       <div className="roll-head">
         <b style={{ color }}>{b.players[r.by].name}</b> {r.label && <span>“{r.label}”</span>}
-        <span className={`src ${r.source}`} title={r.source === 'random.org' ? 'True random numbers from RANDOM.ORG' : 'Rolled with the local fallback'}>
-          {r.source === 'random.org' ? 'RANDOM.ORG' : 'local'}
-        </span>
+        <SourceTag r={r} />
       </div>
       <div className="faces">
         {r.results.map((v, i) => {
