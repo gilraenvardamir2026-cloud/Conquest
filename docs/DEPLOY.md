@@ -33,8 +33,7 @@ server is up.
 
 1. In the Render dashboard choose **New → Blueprint**.
 2. Pick the `conquest` repository.
-3. Choose the **branch** to deploy. The work is currently on
-   `claude/exciting-mccarthy-7bkteh`; once it is merged, use `main`.
+3. Choose the **branch** to deploy: `main`.
 4. Render shows one service, **conquest-tabletop**, on the **Free** plan.
    There is nothing to fill in (dice need no key, see step 3).
 5. Choose **Apply** (or **Deploy Blueprint**).
