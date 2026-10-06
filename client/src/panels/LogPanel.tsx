@@ -36,7 +36,7 @@ export function LogPanel() {
             if (text.trim() && dispatch({ type: 'chat', text: text.trim() })) setText('');
           }}
         >
-          <input type="text" placeholder="Message to the other player…" value={text} onChange={(e) => setText(e.target.value)} maxLength={500} />
+          <input type="text" aria-label="Chat message" placeholder="Message to the other player…" value={text} onChange={(e) => setText(e.target.value)} maxLength={500} />
           <button type="submit">Send</button>
         </form>
       </div>

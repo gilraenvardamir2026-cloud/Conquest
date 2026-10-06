@@ -1,16 +1,36 @@
 // Small controlled inputs that commit on Enter / blur, so typing does not
 // spam the operation log.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { inToMm, mmToIn } from '@conquest/shared';
 
 export function Row({ label, children, title }: { label: string; children: ReactNode; title?: string }) {
+  const id = useId();
+  const ref = useRef<HTMLSpanElement>(null);
+  // Name the row's form controls after the row label for screen readers
+  // (several controls: "Label 1", "Label 2"… unless they bring their own name).
+  useLayoutEffect(() => {
+    const controls = [...(ref.current?.querySelectorAll<HTMLElement>('input, select, textarea') ?? [])];
+    controls.forEach((el, i) => {
+      if (el.dataset.ownLabel || (el.hasAttribute('aria-label') && !el.dataset.rowLabel)) return;
+      if (controls.length === 1) {
+        el.setAttribute('aria-labelledby', id);
+        return;
+      }
+      el.dataset.rowLabel = '1';
+      el.setAttribute('aria-label', el.title ? `${label}: ${el.title}` : `${label} ${i + 1}`);
+    });
+  });
   return (
     // A group rather than a <label>: rows often hold several buttons, and a
     // label would forward clicks on its text to the first one.
-    <div className="row" role="group" aria-label={label} title={title}>
-      <span className="row-label">{label}</span>
-      <span className="row-value">{children}</span>
+    <div className="row" role="group" aria-labelledby={id} title={title}>
+      <span className="row-label" id={id}>
+        {label}
+      </span>
+      <span className="row-value" ref={ref}>
+        {children}
+      </span>
     </div>
   );
 }
@@ -29,6 +49,8 @@ export function NumberField(props: {
   width?: number;
   suffix?: string;
   title?: string;
+  /** Accessible name when there is no visible label. */
+  label?: string;
 }) {
   const { value, onCommit, digits = 2 } = props;
   const [text, setText] = useState(fmt(value, digits));
@@ -65,6 +87,8 @@ export function NumberField(props: {
         max={props.max}
         disabled={props.disabled}
         title={props.title}
+        aria-label={props.label}
+        data-own-label={props.label ? '1' : undefined}
         style={{ width: props.width ?? 64 }}
         onFocus={() => (focused.current = true)}
         onBlur={() => {
@@ -89,7 +113,7 @@ export function NumberField(props: {
  * A length stored in inches. The user may type it in millimetres instead;
  * the value is converted at once (1" = 25.4 mm) and only inches are stored.
  */
-export function LengthField(props: { value: number; onCommit: (inches: number) => void; disabled?: boolean; min?: number }) {
+export function LengthField(props: { value: number; onCommit: (inches: number) => void; disabled?: boolean; min?: number; label?: string }) {
   const [unit, setUnit] = useState<'in' | 'mm'>('in');
   const shown = unit === 'in' ? props.value : inToMm(props.value);
   return (
@@ -100,6 +124,7 @@ export function LengthField(props: { value: number; onCommit: (inches: number) =
         min={props.min ?? 0.01}
         step={unit === 'in' ? 0.1 : 1}
         disabled={props.disabled}
+        label={props.label}
         onCommit={(n) => n !== undefined && props.onCommit(unit === 'in' ? n : mmToIn(n))}
       />
       <button type="button" className="unit" onClick={() => setUnit(unit === 'in' ? 'mm' : 'in')} title="Switch input unit (stored in inches)">
@@ -109,7 +134,7 @@ export function LengthField(props: { value: number; onCommit: (inches: number) =
   );
 }
 
-export function TextField(props: { value: string; onCommit: (s: string) => void; placeholder?: string; disabled?: boolean }) {
+export function TextField(props: { value: string; onCommit: (s: string) => void; placeholder?: string; disabled?: boolean; label?: string }) {
   const [text, setText] = useState(props.value);
   const focused = useRef(false);
   useEffect(() => {
@@ -121,6 +146,8 @@ export function TextField(props: { value: string; onCommit: (s: string) => void;
       value={text}
       placeholder={props.placeholder}
       disabled={props.disabled}
+      aria-label={props.label}
+      data-own-label={props.label ? '1' : undefined}
       onFocus={() => (focused.current = true)}
       onBlur={() => {
         focused.current = false;
@@ -139,7 +166,7 @@ export function TextField(props: { value: string; onCommit: (s: string) => void;
 }
 
 /** Multi-line notes, autosaved a moment after typing stops. */
-export function NotesField(props: { value: string; onCommit: (s: string) => void; placeholder?: string }) {
+export function NotesField(props: { value: string; onCommit: (s: string) => void; placeholder?: string; label?: string }) {
   const [text, setText] = useState(props.value);
   const focused = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -160,6 +187,7 @@ export function NotesField(props: { value: string; onCommit: (s: string) => void
       rows={4}
       value={text}
       placeholder={props.placeholder}
+      aria-label={props.label ?? props.placeholder ?? 'Notes'}
       onFocus={() => (focused.current = true)}
       onBlur={() => {
         focused.current = false;
@@ -178,7 +206,7 @@ export function Section({ title, children, right }: { title: string; children: R
   return (
     <section className="section">
       <header>
-        <h3>{title}</h3>
+        <h2>{title}</h2>
         {right}
       </header>
       {children}

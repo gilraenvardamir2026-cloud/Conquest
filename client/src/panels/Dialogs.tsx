@@ -5,6 +5,8 @@ import { KEYWORD_INITIALS, STAND_PRESETS, type BattleSettings, type StandType } 
 import { dispatch, useStore } from '../store';
 import { freeSeat } from '../net';
 import { LengthField, NumberField, Row, TextField } from '../ui/fields';
+import { Modal } from '../ui/Modal';
+import { worstColorDistance } from '../ui/color';
 
 export function SettingsDialog() {
   const b = useStore((s) => s.battle);
@@ -13,93 +15,103 @@ export function SettingsDialog() {
   const s = b.settings;
   const types = Object.keys(STAND_PRESETS) as Exclude<StandType, 'custom'>[];
   return (
-    <div className="modal-back" onClick={close}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-        <h2>Settings</h2>
-        <h3>Players</h3>
-        {(['p1', 'p2'] as const).map((seat) => (
-          <Row key={seat} label={seat === 'p1' ? 'Player 1 (bottom edge)' : 'Player 2 (top edge)'}>
-            <TextField value={b.players[seat].name} onCommit={(name) => dispatch({ type: 'updatePlayer', seat, patch: { name: name || (seat === 'p1' ? 'Player 1' : 'Player 2') } })} />
-            <input type="color" value={b.players[seat].color} onChange={(e) => dispatch({ type: 'updatePlayer', seat, patch: { color: e.target.value } })} aria-label="Colour" />
-          </Row>
-        ))}
+    <Modal title="Settings" onClose={close} wide>
+      <h3>Players</h3>
+      {(['p1', 'p2'] as const).map((seat) => (
+        <Row key={seat} label={seat === 'p1' ? 'Player 1 (bottom edge)' : 'Player 2 (top edge)'}>
+          <TextField value={b.players[seat].name} onCommit={(name) => dispatch({ type: 'updatePlayer', seat, patch: { name: name || (seat === 'p1' ? 'Player 1' : 'Player 2') } })} />
+          <input type="color" value={b.players[seat].color} onChange={(e) => dispatch({ type: 'updatePlayer', seat, patch: { color: e.target.value } })} aria-label={`${seat === 'p1' ? 'Player 1' : 'Player 2'} colour`} data-own-label="1" />
+        </Row>
+      ))}
 
-        <OnlineSettings />
+      <ColorCheck a={b.players.p1.color} b={b.players.p2.color} />
 
-        <h3>Stand presets</h3>
-        <p className="muted small">Footprints in inches (type in mm with the unit button; 1" = 25.4 mm). New regiments use these; existing ones keep their size until you change their stand type.</p>
-        <table className="presets">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Width (front)</th>
-              <th>Depth</th>
-              <th>LoS size</th>
+      <OnlineSettings />
+
+      <h3>Stand presets</h3>
+      <p className="muted small">Footprints in inches (type in mm with the unit button; 1" = 25.4 mm). New regiments use these; existing ones keep their size until you change their stand type.</p>
+      <table className="presets">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Width (front)</th>
+            <th>Depth</th>
+            <th>LoS size</th>
+          </tr>
+        </thead>
+        <tbody>
+          {types.map((t) => (
+            <tr key={t}>
+              <td>{t}</td>
+              <td>
+                <LengthField value={s.standPresets[t].w} label={`${t} width`} onCommit={(w) => set({ standPresets: { ...s.standPresets, [t]: { ...s.standPresets[t], w } } })} />
+              </td>
+              <td>
+                <LengthField value={s.standPresets[t].d} label={`${t} depth`} onCommit={(d) => set({ standPresets: { ...s.standPresets, [t]: { ...s.standPresets[t], d } } })} />
+              </td>
+              <td>
+                <NumberField value={s.standPresets[t].size} label={`${t} LoS size`} digits={0} step={1} min={0} max={10} width={44} onCommit={(size) => size !== undefined && set({ standPresets: { ...s.standPresets, [t]: { ...s.standPresets[t], size } } })} />
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {types.map((t) => (
-              <tr key={t}>
-                <td>{t}</td>
-                <td>
-                  <LengthField value={s.standPresets[t].w} onCommit={(w) => set({ standPresets: { ...s.standPresets, [t]: { ...s.standPresets[t], w } } })} />
-                </td>
-                <td>
-                  <LengthField value={s.standPresets[t].d} onCommit={(d) => set({ standPresets: { ...s.standPresets, [t]: { ...s.standPresets[t], d } } })} />
-                </td>
-                <td>
-                  <NumberField value={s.standPresets[t].size} digits={0} step={1} min={0} max={10} width={44} onCommit={(size) => size !== undefined && set({ standPresets: { ...s.standPresets, [t]: { ...s.standPresets[t], size } } })} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <button onClick={() => set({ standPresets: STAND_PRESETS })}>Reset presets</button>
+          ))}
+        </tbody>
+      </table>
+      <button onClick={() => set({ standPresets: STAND_PRESETS })}>Reset presets</button>
 
-        <h3>Stands and characters</h3>
-        <Row label="Ask before removing a destroyed stand">
-          <input type="checkbox" checked={s.confirmStandRemoval} onChange={(e) => set({ confirmStandRemoval: e.target.checked })} />
-        </Row>
-        <Row label="Two stands equally far from the command stand">
-          <select value={s.woundTies ?? 'ask'} onChange={(e) => set({ woundTies: e.target.value as BattleSettings['woundTies'] })}>
-            <option value="ask">ask which one takes the wound</option>
-            <option value="left">the left one takes it</option>
-          </select>
-        </Row>
-        <Row label="Close ranks when a character leaves">
-          <input type="checkbox" checked={s.reformOnDetach !== false} onChange={(e) => set({ reformOnDetach: e.target.checked })} />
-        </Row>
-        <Row label="Character joins on the command stand's">
-          <select value={s.characterSide} onChange={(e) => set({ characterSide: e.target.value as 'left' | 'right' })}>
-            <option value="right">right</option>
-            <option value="left">left</option>
-          </select>
-        </Row>
+      <h3>Stands and characters</h3>
+      <Row label="Ask before removing a destroyed stand">
+        <input type="checkbox" checked={s.confirmStandRemoval} onChange={(e) => set({ confirmStandRemoval: e.target.checked })} />
+      </Row>
+      <Row label="Two stands equally far from the command stand">
+        <select value={s.woundTies ?? 'ask'} onChange={(e) => set({ woundTies: e.target.value as BattleSettings['woundTies'] })}>
+          <option value="ask">ask which one takes the wound</option>
+          <option value="left">the left one takes it</option>
+        </select>
+      </Row>
+      <Row label="Close ranks when a character leaves">
+        <input type="checkbox" checked={s.reformOnDetach !== false} onChange={(e) => set({ reformOnDetach: e.target.checked })} />
+      </Row>
+      <Row label="Character joins on the command stand's">
+        <select value={s.characterSide} onChange={(e) => set({ characterSide: e.target.value as 'left' | 'right' })}>
+          <option value="right">right</option>
+          <option value="left">left</option>
+        </select>
+      </Row>
 
-        <h3>Line of sight</h3>
-        <Row label="Obstructing terrain">
-          <select value={s.losObstructing} onChange={(e) => set({ losObstructing: e.target.value as BattleSettings['losObstructing'] })}>
-            <option value="tournament">blocks every line (tournament pack)</option>
-            <option value="core">blocks only if its Size ≥ both sizes (core rules)</option>
-          </select>
-        </Row>
-        <Row label="Size comparison">
-          <select value={s.losSizeComparison} onChange={(e) => set({ losSizeComparison: e.target.value as BattleSettings['losSizeComparison'] })}>
-            <option value="both">against both acting and target sizes</option>
-            <option value="acting">against the acting size only</option>
-          </select>
-        </Row>
-        <Row label="Volley sampling step">
-          <NumberField value={s.losSampleStep} min={0.05} max={2} width={52} suffix='"' onCommit={(n) => n && set({ losSampleStep: n })} />
-        </Row>
+      <h3>Line of sight</h3>
+      <Row label="Obstructing terrain">
+        <select value={s.losObstructing} onChange={(e) => set({ losObstructing: e.target.value as BattleSettings['losObstructing'] })}>
+          <option value="tournament">blocks every line (tournament pack)</option>
+          <option value="core">blocks only if its Size ≥ both sizes (core rules)</option>
+        </select>
+      </Row>
+      <Row label="Size comparison">
+        <select value={s.losSizeComparison} onChange={(e) => set({ losSizeComparison: e.target.value as BattleSettings['losSizeComparison'] })}>
+          <option value="both">against both acting and target sizes</option>
+          <option value="acting">against the acting size only</option>
+        </select>
+      </Row>
+      <Row label="Volley sampling step">
+        <NumberField value={s.losSampleStep} min={0.05} max={2} width={52} suffix='"' onCommit={(n) => n && set({ losSampleStep: n })} />
+      </Row>
 
-        <div className="btn-row end">
-          <button className="primary" onClick={close}>
-            Done
-          </button>
-        </div>
+      <div className="btn-row end">
+        <button className="primary" onClick={close}>
+          Done
+        </button>
       </div>
-    </div>
+    </Modal>
+  );
+}
+
+/** Warn when the two player colours could be confused, including by colour-blind players. */
+function ColorCheck({ a, b }: { a: string; b: string }) {
+  const w = worstColorDistance(a, b);
+  if (w.delta >= 30) return null;
+  return (
+    <p className="banner warn small" role="status">
+      These two colours look alike{w.vision === 'normal vision' ? '' : ` to someone with ${w.vision}`}. Pick colours further apart.
+    </p>
   );
 }
 
@@ -207,46 +219,43 @@ function Keys({ text }: { text: string }) {
 export function HelpOverlay() {
   const close = () => useStore.getState().setShowHelp(false);
   return (
-    <div className="modal-back" onClick={close}>
-      <div className="modal wide" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={(e) => e.stopPropagation()}>
-        <h2 id="help-title">Controls</h2>
-        <div className="help-cols">
-          {HELP.map((sec) => (
-            <section key={sec.title}>
-              <h3>{sec.title}</h3>
-              <table className="keys">
-                <tbody>
-                  {sec.rows.map(([keys, what]) => (
-                    <tr key={keys}>
-                      <td>
-                        <Keys text={keys} />
-                      </td>
-                      <td>{what}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          ))}
-        </div>
-        <h3>Terrain keyword tags</h3>
-        <p className="small">
-          {Object.entries(KEYWORD_INITIALS).map(([k, v]) => (
-            <span key={k} className="kw-legend">
-              <b>{v}</b> {k}
-            </span>
-          ))}
-        </p>
-        <p className="muted small">
-          This is a virtual tabletop, not a rules engine: it moves pieces and measures in inches. Players apply the rules. Warnings never block a move and line of sight is reported, never enforced.
-        </p>
-        <div className="btn-row end">
-          <button className="primary" onClick={close}>
-            Close
-          </button>
-        </div>
+    <Modal title="Controls" onClose={close} wide>
+      <div className="help-cols">
+        {HELP.map((sec) => (
+          <section key={sec.title}>
+            <h3>{sec.title}</h3>
+            <table className="keys">
+              <tbody>
+                {sec.rows.map(([keys, what]) => (
+                  <tr key={keys}>
+                    <td>
+                      <Keys text={keys} />
+                    </td>
+                    <td>{what}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))}
       </div>
-    </div>
+      <h3>Terrain keyword tags</h3>
+      <p className="small">
+        {Object.entries(KEYWORD_INITIALS).map(([k, v]) => (
+          <span key={k} className="kw-legend">
+            <b>{v}</b> {k}
+          </span>
+        ))}
+      </p>
+      <p className="muted small">
+        This is a virtual tabletop, not a rules engine: it moves pieces and measures in inches. Players apply the rules. Warnings never block a move and line of sight is reported, never enforced.
+      </p>
+      <div className="btn-row end">
+        <button className="primary" onClick={close}>
+          Close
+        </button>
+      </div>
+    </Modal>
   );
 }
 

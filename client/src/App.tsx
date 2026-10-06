@@ -8,6 +8,7 @@ import { Toolbar } from './panels/Toolbar';
 import { DiceTray } from './panels/DiceTray';
 import { RoomOverlays } from './panels/RoomOverlays';
 import { useStore } from './store';
+import { refName, totalDamage } from '@conquest/shared';
 import { applyAlign, cycle, movableFromSelection, nudge, panBy, pinCurrent, refFromSelection, startLos, startMoveForSelection, zoomBy } from './moveActions';
 
 export function App() {
@@ -107,19 +108,19 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="app-toolbar">
+      <header className="app-toolbar" aria-label="Toolbar">
         <Toolbar />
       </header>
-      <aside className="app-left">
+      <aside className="app-left" aria-label="Armies">
         <Roster />
       </aside>
-      <main className="app-board">
+      <main className="app-board" aria-label="Battlefield">
         <Board />
       </main>
-      <aside className="app-right">
+      <aside className="app-right" aria-label="Inspector">
         <Inspector />
       </aside>
-      <footer className="app-log">
+      <footer className="app-log" aria-label="Log and chat">
         <LogPanel />
       </footer>
       {showDice && <DiceTray />}
@@ -127,6 +128,28 @@ export function App() {
       {showHelp && <HelpOverlay />}
       {showSettings && <SettingsDialog />}
       <Toast />
+      <SelectionAnnouncer />
+    </div>
+  );
+}
+
+/** Tells screen-reader users what is selected (the board itself is a picture). */
+function SelectionAnnouncer() {
+  const text = useStore((s) => {
+    const sel = s.selection;
+    if (!sel || sel.kind === 'marker') return '';
+    const b = s.battle;
+    if (sel.kind === 'regiment') {
+      const r = b.regiments.find((x) => x.id === sel.id);
+      if (!r) return '';
+      const where = r.location === 'board' ? 'on the board' : r.location === 'reserve' ? 'in reserve' : 'destroyed';
+      return `Selected ${r.name}, ${b.players[r.owner].name}, ${r.stands.length} stands, ${totalDamage(r)} damage, ${where}`;
+    }
+    return `Selected ${refName(b, { kind: sel.kind, id: sel.id })}`;
+  });
+  return (
+    <div className="sr-only" aria-live="polite">
+      {text}
     </div>
   );
 }

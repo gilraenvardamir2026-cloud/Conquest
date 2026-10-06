@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { SAMPLE_LAYOUTS, SCENARIOS, type Battle } from '@conquest/shared';
 import { useStore, type Tool } from '../store';
 import { downloadJson } from './actions';
+import { Modal } from '../ui/Modal';
 import { startLos, startMoveForSelection } from '../moveActions';
 
 export function Toolbar() {
@@ -28,7 +29,7 @@ export function Toolbar() {
 
   return (
     <div className="toolbar">
-      <span className="brand">Conquest Tabletop</span>
+      <h1 className="brand">Conquest Tabletop</h1>
       <div className="tb-group">
         {toolBtn('select', 'Select', 'V')}
         <button className={moving ? 'on' : ''} aria-pressed={moving} onClick={() => startMoveForSelection()} title="Move the selected regiment or character (M)">
@@ -124,46 +125,43 @@ function NewBattleDialog({ onClose }: { onClose: () => void }) {
   const [scenario, setScenario] = useState('s1');
   const [layout, setLayout] = useState('layout1');
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>New battle</h2>
-        <p className="muted small">This replaces the current local battle. Save it first if you want to keep it.</p>
-        <label className="row">
-          <span className="row-label">Scenario</span>
-          <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
-            {SCENARIOS.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.number}. {s.name}
-              </option>
-            ))}
-            <option value="custom">Custom board</option>
-          </select>
-        </label>
-        <label className="row">
-          <span className="row-label">Terrain</span>
-          <select value={layout} onChange={(e) => setLayout(e.target.value)}>
-            {SAMPLE_LAYOUTS.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-            <option value="">No terrain</option>
-          </select>
-        </label>
-        <div className="btn-row end">
-          <button onClick={onClose}>Cancel</button>
-          <button
-            className="primary"
-            onClick={() => {
-              useStore.getState().newBattle(scenario === 'custom' ? undefined : scenario, layout || undefined);
-              onClose();
-            }}
-          >
-            Create
-          </button>
-        </div>
+    <Modal title="New battle" onClose={onClose}>
+      <p className="muted small">This replaces the current local battle. Save it first if you want to keep it.</p>
+      <label className="row">
+        <span className="row-label">Scenario</span>
+        <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
+          {SCENARIOS.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.number}. {s.name}
+            </option>
+          ))}
+          <option value="custom">Custom board</option>
+        </select>
+      </label>
+      <label className="row">
+        <span className="row-label">Terrain</span>
+        <select value={layout} onChange={(e) => setLayout(e.target.value)}>
+          {SAMPLE_LAYOUTS.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+          <option value="">No terrain</option>
+        </select>
+      </label>
+      <div className="btn-row end">
+        <button onClick={onClose}>Cancel</button>
+        <button
+          className="primary"
+          onClick={() => {
+            useStore.getState().newBattle(scenario === 'custom' ? undefined : scenario, layout || undefined);
+            onClose();
+          }}
+        >
+          Create
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 

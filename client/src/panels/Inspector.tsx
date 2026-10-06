@@ -97,9 +97,9 @@ function SeatSelect({ value, onChange, b, disabled }: { value: PlayerSeat; onCha
 function PoseFields({ x, y, angle, onCommit }: { x: number; y: number; angle: number; onCommit: (p: { x: number; y: number; angle: number }) => void }) {
   return (
     <Row label="Position" title="Front-left corner in inches; angle in degrees, 0 = facing up the board">
-      <NumberField value={x} width={56} onCommit={(v) => v !== undefined && onCommit({ x: v, y, angle })} />
-      <NumberField value={y} width={56} onCommit={(v) => v !== undefined && onCommit({ x, y: v, angle })} />
-      <NumberField value={angle} width={52} digits={1} step={1} suffix="°" onCommit={(v) => v !== undefined && onCommit({ x, y, angle: v })} />
+      <NumberField value={x} width={56} label="Position x, inches" onCommit={(v) => v !== undefined && onCommit({ x: v, y, angle })} />
+      <NumberField value={y} width={56} label="Position y, inches" onCommit={(v) => v !== undefined && onCommit({ x, y: v, angle })} />
+      <NumberField value={angle} width={52} digits={1} step={1} suffix="°" label="Facing angle, degrees" onCommit={(v) => v !== undefined && onCommit({ x, y, angle: v })} />
     </Row>
   );
 }
@@ -192,7 +192,7 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
         )}
         <div className="btn-row">
           <span className="row-label">Apply wounds</span>
-          <NumberField value={wounds} digits={0} step={1} min={1} max={200} width={52} onCommit={(n) => n && setWounds(n)} />
+          <NumberField value={wounds} label="Wounds to apply" digits={0} step={1} min={1} max={200} width={52} onCommit={(n) => n && setWounds(n)} />
           <button className="primary" disabled={!!tie} onClick={() => applyWounds([])}>
             Apply
           </button>
@@ -241,6 +241,7 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
           <DetachPicker c={ch} b={b} />
         ) : joinable.length ? (
           <select
+            aria-label="Join a character to this regiment"
             value=""
             onChange={(e) => {
               const c = b.characters.find((x) => x.id === e.target.value);
@@ -460,6 +461,7 @@ function CharacterInspector({ c, b, close }: { c: Character; b: Battle; close: R
           <DetachPicker c={c} b={b} />
         ) : (
           <select
+            aria-label="Join a regiment"
             value=""
             onChange={(e) => {
               const r = b.regiments.find((x) => x.id === e.target.value);

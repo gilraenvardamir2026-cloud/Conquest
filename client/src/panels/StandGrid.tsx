@@ -102,6 +102,14 @@ export function StandGrid({ reg, b, tieIds, onTiePick }: { reg: Regiment; b: Bat
             className={`cell empty ${picked ? 'target' : ''}`}
             style={{ left: left(s), top: top(s), width: CELL, height: cellH }}
             onClick={() => clickEmpty(s)}
+            {...(picked
+              ? {
+                  role: 'button',
+                  tabIndex: 0,
+                  'aria-label': `Empty slot, rank ${s.rank + 1}, file ${s.file + 1}`,
+                  onKeyDown: (e: React.KeyboardEvent) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), clickEmpty(s)),
+                }
+              : {})}
           />
         ))}
         {placed.map((it) => {

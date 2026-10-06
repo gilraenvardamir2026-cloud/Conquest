@@ -181,8 +181,10 @@ export function BoardPanel() {
         ) : (
           <ul className="warnings">
             {warnings.map((w, i) => (
-              <li key={i} onClick={() => setHighlight(w.ids)}>
-                {w.text}
+              <li key={i}>
+                <button type="button" onClick={() => setHighlight(w.ids)} title="Highlight on the board">
+                  {w.text}
+                </button>
               </li>
             ))}
           </ul>

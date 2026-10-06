@@ -41,7 +41,7 @@ export function Home({ error }: { error?: string }) {
   };
 
   return (
-    <div className="home">
+    <main className="home">
       <h1>Conquest Tabletop</h1>
       <p className="muted">A shared top-down battlefield for two players. It moves pieces and measures in inches; you apply the rules.</p>
       {msg && <div className="banner warn">{msg}</div>}
@@ -110,6 +110,6 @@ export function Home({ error }: { error?: string }) {
       <p className="small">
         <a href="/local">Practise offline</a> <span className="muted">— one browser, saved locally, no opponent.</span>
       </p>
-    </div>
+    </main>
   );
 }

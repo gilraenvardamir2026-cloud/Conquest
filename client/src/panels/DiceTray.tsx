@@ -60,20 +60,20 @@ export function DiceTray() {
   const rolls = b.dice.slice().reverse();
   return (
     <div className="dice-tray" role="dialog" aria-label="Dice tray">
-      <header>
+      <div className="tray-head">
         <strong>Dice</strong>
-        <button className="icon" title="Close (X)" onClick={() => st.setShowDice(false)}>
+        <button className="icon" title="Close (X)" aria-label="Close dice tray" onClick={() => st.setShowDice(false)}>
           ✕
         </button>
-      </header>
-      <div className="btn-row">
-        <span className="row-label">Dice</span>
-        <NumberField value={count} digits={0} step={1} min={1} max={60} width={52} onCommit={(n) => n && setCount(n)} />
-        <span className="row-label">Success ≤</span>
-        <NumberField value={target} allowEmpty digits={0} step={1} min={1} max={6} width={44} onCommit={(n) => setTarget(n)} />
       </div>
       <div className="btn-row">
-        <input type="text" placeholder='Label, e.g. "Clash vs Militia"' value={label} maxLength={80} onChange={(e) => setLabel(e.target.value)} className="grow" />
+        <span className="row-label">Dice</span>
+        <NumberField value={count} label="Number of dice" digits={0} step={1} min={1} max={60} width={52} onCommit={(n) => n && setCount(n)} />
+        <span className="row-label">Success ≤</span>
+        <NumberField value={target} label="Success on this or lower (optional)" allowEmpty digits={0} step={1} min={1} max={6} width={44} onCommit={(n) => setTarget(n)} />
+      </div>
+      <div className="btn-row">
+        <input type="text" aria-label="What the roll is for" placeholder='Label, e.g. "Clash vs Militia"' value={label} maxLength={80} onChange={(e) => setLabel(e.target.value)} className="grow" />
       </div>
       <div className="btn-row">
         <button className="primary" disabled={!canRoll} onClick={roll}>

@@ -102,7 +102,7 @@ function RingSection({ b, close }: { b: Battle; close: React.ReactNode }) {
       </label>
       <div className="btn-row">
         <span className="row-label">Custom</span>
-        <NumberField value={ring.custom ?? undefined} allowEmpty min={0.1} max={200} width={56} suffix='"' onCommit={(n) => set({ custom: n ?? null })} />
+        <NumberField value={ring.custom ?? undefined} label="Custom range, inches" allowEmpty min={0.1} max={200} width={56} suffix='"' onCommit={(n) => set({ custom: n ?? null })} />
       </div>
       <div className="btn-row">
         <button className="primary" disabled={!radii.length} onClick={pinCurrent} title="Keep them on the board for everyone (P)">

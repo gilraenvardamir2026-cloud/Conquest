@@ -7,6 +7,18 @@ import { useStore } from '../store';
 import { addCharacter, addRegiment, lastArmy, loadArmy, readArmyFile, saveArmy } from './actions';
 import { NumberField } from '../ui/fields';
 
+/** A clickable row that the keyboard can reach and press too. */
+const rowKeys = (act: () => void) => ({
+  role: 'button',
+  tabIndex: 0,
+  onKeyDown: (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      act();
+    }
+  },
+});
+
 const GROUPS: { loc: Location; title: string }[] = [
   { loc: 'board', title: 'On board' },
   { loc: 'reserve', title: 'Reserve' },
@@ -140,6 +152,8 @@ function PlayerRoster({ seat, b }: { seat: PlayerSeat; b: Battle }) {
                       draggable={loc === 'reserve'}
                       onDragStart={drag('regiment', r.id)}
                       onClick={() => pick('regiment', r.id)}
+                      {...rowKeys(() => pick('regiment', r.id))}
+                      aria-current={sel || undefined}
                       title={loc === 'reserve' ? 'Drag onto the board to deploy' : undefined}
                     >
                       <span className="name">
@@ -162,6 +176,8 @@ function PlayerRoster({ seat, b }: { seat: PlayerSeat; b: Battle }) {
                       draggable={loc === 'reserve'}
                       onDragStart={drag('character', c.id)}
                       onClick={() => pick('character', c.id)}
+                      {...rowKeys(() => pick('character', c.id))}
+                      aria-current={sel || undefined}
                       title={loc === 'reserve' ? 'Drag onto one of your regiments to join it' : undefined}
                     >
                       <span className="name">★ {c.name}</span>
