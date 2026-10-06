@@ -106,6 +106,14 @@ server/   Node + Express + ws: app.ts (API + WebSocket), rooms.ts (authority,
   On load the operations are replayed through the reducer. Rooms untouched for
   30 days are deleted. A reconnecting client asks for what it missed since its
   last sequence number (or gets a full snapshot).
+- **Hidden information.** Command stack order is the one secret in a game.
+  The battle document (which every browser gets) holds only each stack's
+  public part: round, locked, size and the cards flipped so far. The server
+  keeps each seat's unflipped cards beside the room (saved in its snapshot)
+  and sends them only to that seat. Building, locking and flipping are
+  messages to the server, which turns them into server-only operations. A
+  browser also remembers its own stack, so it can hand it back after a
+  recovery.
 - **Recovery without a disk.** On a free host the files vanish when the server
   restarts. If a room is gone when a seated player's browser reconnects, the
   browser uploads its copy (`POST /api/rooms/:code/recover`); the server
@@ -290,7 +298,14 @@ settings (⚙ = in the Settings dialog).
     Barrage range, notes, tags and starting character; positions and damage
     are not saved. Loading adds everything to the reserve (asking first if the
     player already has units). Destroyed characters are left out.
-35. **Colour check.** Settings warns when the two player colours are closer
+35. **Command stacks.** Every regiment and every character not destroyed has
+    one command card (reserves included; a character's card is separate from
+    its regiment's). Each player chooses which cards go in the stack and in
+    what order; nothing about card counts or alternating turns is enforced.
+    A locked stack can be rebuilt only before its first card is flipped;
+    *Take back* returns the last flipped card to the top; *End round* clears
+    it. A card keeps the unit's name from when it was built.
+36. **Colour check.** Settings warns when the two player colours are closer
     than ΔE 30 for normal vision or simulated red-, green- or blue-blindness
     (Machado et al. 2009). The default red and blue stay above 70 for all.
 
@@ -401,13 +416,27 @@ settings (⚙ = in the Settings dialog).
   the list in the right panel.
 - Touching stands are always highlighted in orange.
 
+### Command stacks
+
+- **Command (C)** opens the tray. Build your stack from your units' cards
+  (*Add all*, or one by one), order it with ↑ ↓ or by dragging (the top card
+  flips first), then **Lock stack**. Your opponent now sees how many cards you
+  hold, never their order.
+- **Flip next card** (or **N** with the tray open) shows the next card to
+  both players: it appears under *Now activating*, in the log, and its
+  regiment is outlined on the board in your colour. *Take back* undoes a
+  flip; *Rebuild* unlocks before the first flip; *End round* clears the stack.
+- Online, the order of unflipped cards is kept only by the server and sent
+  only to its owner; offline, the browser keeps both stacks.
+
 ### Keyboard and accessibility
 
 - **Shortcuts**: V select, M move, R ruler, D distance, G range rings, L line
   of sight, A (hold) all arcs, X dice, T draw terrain, P pin, F fit, + / −
   zoom, arrows pan (with nothing selected), [ / ] step through the regiments
   on the board (with LoS: through the targets), Enter commit, Esc cancel,
-  Backspace drop segment, arrows / Q / E nudge, Delete send to reserve (asks),
+  Backspace drop segment, arrows / Q / E nudge, C command stacks, N flip the
+  next command card (tray open), Delete send to reserve (asks),
   Ctrl+Z undo, ? help (the full list, by topic).
 - Everything outside the board can be reached with Tab; roster rows act on
   Enter or Space. Dialogs keep focus inside and give it back when closed. The

@@ -17,6 +17,7 @@ export function Toolbar() {
   const moving = useStore((s) => !!s.moveSession);
   const mode = useStore((s) => s.mode);
   const showDice = useStore((s) => s.showDice);
+  const showCommand = useStore((s) => s.showCommand);
   const st = useStore.getState();
   const fileRef = useRef<HTMLInputElement>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -108,6 +109,9 @@ export function Toolbar() {
         {mode === 'local' ? <button onClick={() => setNewOpen(true)}>New battle</button> : <a className="button-link" href="/">New battle</a>}
         <button className={showDice ? 'on' : ''} aria-pressed={showDice} onClick={() => st.setShowDice(!showDice)} title="Dice tray (X)">
           Dice
+        </button>
+        <button className={showCommand ? 'on' : ''} aria-pressed={showCommand} onClick={() => st.setShowCommand(!showCommand)} title="Command stacks (C)">
+          Command
         </button>
       </div>
       <div className="tb-group right">

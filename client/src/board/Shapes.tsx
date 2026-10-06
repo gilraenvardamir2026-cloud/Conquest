@@ -276,6 +276,8 @@ export function RegimentShape(props: {
   flip: boolean;
   selected: boolean;
   warn?: boolean;
+  /** Its command card is the one flipped last: outlined in its owner's colour. */
+  activating?: boolean;
   offset?: { x: number; y: number };
   onDown: DownHandler;
   hover: HoverHandlers;
@@ -330,6 +332,9 @@ export function RegimentShape(props: {
           <rect x={box.u0 - 0.12} y={-0.12} width={box.u1 - box.u0 + 0.24} height={box.v1 + 0.24} fill="none" stroke={SELECT_STROKE} strokeWidth={0.12} strokeDasharray="0.4 0.2" />
         )}
         {props.warn && <rect x={box.u0 - 0.25} y={-0.25} width={box.u1 - box.u0 + 0.5} height={box.v1 + 0.5} fill="none" stroke={WARN_STROKE} strokeWidth={0.12} />}
+        {props.activating && (
+          <rect className="activating-ring" x={box.u0 - 0.45} y={-0.45} width={box.u1 - box.u0 + 0.9} height={box.v1 + 0.9} rx={0.3} fill="none" stroke={color} strokeWidth={0.22} />
+        )}
       </g>
       {reg.stands.map((s) => {
         const t = standText(s);

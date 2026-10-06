@@ -40,7 +40,7 @@ export function LogPanel() {
           <button type="submit">Send</button>
         </form>
       </div>
-      <div className="log-list" ref={listRef}>
+      <div className="log-list" ref={listRef} tabIndex={0} role="log" aria-label="Battle log">
         {rows.length === 0 && <div className="muted small">Nothing yet. Every change is recorded here.</div>}
         {rows.map((e) => {
           const color = e.by === 'p1' || e.by === 'p2' ? players[e.by].color : '#666';

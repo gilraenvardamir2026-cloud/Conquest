@@ -199,6 +199,7 @@ const HELP: { title: string; rows: [string, string][] }[] = [
     title: 'Game',
     rows: [
       ['[X]', 'Dice tray: roll, re-roll ticked dice once, roll-off'],
+      ['[C] · [N]', 'Command stacks: build and lock your stack, then flip the next card (N, while the tray is open)'],
       ['[Ctrl]+[Z]', 'Undo your last change'],
       ['Army list… (roster)', 'Save your army to a file, or load a saved one into the reserve'],
       ['[?]', 'This help'],

@@ -13,6 +13,7 @@ import {
   dist,
   dot,
   dragAngle,
+  lastRevealed,
   fmtIn,
   facingVec,
   forwardSegment,
@@ -218,6 +219,9 @@ export function Board() {
   const warnIds = useMemo(() => new Set([...highlight, ...moveWarns.flatMap((w) => w.ids), ...losBlockerIds(losResult)]), [highlight, moveWarns, losResult]);
   // Facing arcs: of the LoS acting piece, else of the selected regiment / character, or of everything while A is held.
   const arcIds = tool === 'los' ? (los.acting?.kind === 'regiment' ? [los.acting.id] : []) : selection && (selection.kind === 'regiment' || selection.kind === 'character') ? [selection.id] : [];
+  // The regiment whose command card was flipped last (a character's: its regiment).
+  const flipped = lastRevealed(battle);
+  const activatingId = flipped ? (flipped.kind === 'regiment' ? flipped.id : battle.characters.find((c) => c.id === flipped.id)?.attachedTo) : undefined;
   const frames = arcFrames(eff, arcIds, showAllArcs, pieceFrame);
   const snapPoints = useMemo(() => (tool === 'ruler' ? collectSnapPoints(eff) : []), [eff, tool]);
   const px = 1 / view.scale; // one screen pixel in inches
@@ -737,6 +741,7 @@ export function Board() {
                   flip={flip}
                   selected={isSel('regiment', r.id)}
                   warn={isMoving ? movingWarn : warnIds.has(r.id)}
+                  activating={activatingId === r.id}
                   onDown={onEntityDown(sel)}
                   hover={hoverFor(sel)}
                 />

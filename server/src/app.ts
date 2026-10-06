@@ -300,17 +300,19 @@ export async function createApp(opts: AppOptions): Promise<{ server: Server; sto
         }
         case 'stackRestore': {
           // Only right after a recovery, and only into an empty slot.
-          if (!c.seat || !room.recoveredAt || Date.now() - room.recoveredAt > RECOVERY_SEAT_MS || room.stacks[c.seat]?.length) return;
+          if (!c.seat) return;
           const seat = c.seat;
+          // Declined: the browser's copy is stale, so it gets the real one back.
+          if (!room.recoveredAt || Date.now() - room.recoveredAt > RECOVERY_SEAT_MS || room.stacks[seat]?.length) return sendStack(room, seat);
           const pub = room.battle.command[seat];
           const units = [...room.battle.regiments.map((r) => ({ kind: 'regiment' as const, id: r.id, name: r.name, owner: r.owner })), ...room.battle.characters.map((x) => ({ kind: 'character' as const, id: x.id, name: x.name, owner: x.owner }))];
           const cards: CommandCard[] = [];
           for (const ref of m.cards) {
             const u = units.find((x) => x.kind === ref.kind && x.id === ref.id && x.owner === seat);
-            if (!u || cards.some((x) => x.kind === u.kind && x.id === u.id)) return notice(c, 'Could not restore your command stack');
+            if (!u || cards.some((x) => x.kind === u.kind && x.id === u.id)) return (notice(c, 'Could not restore your command stack'), sendStack(room, seat));
             cards.push({ kind: u.kind, id: u.id, name: u.name });
           }
-          if (pub.locked && cards.length !== pub.size - pub.revealed.length) return notice(c, 'Could not restore your command stack');
+          if (pub.locked && cards.length !== pub.size - pub.revealed.length) return (notice(c, 'Could not restore your command stack'), sendStack(room, seat));
           room.stacks[seat] = cards;
           void room.snapshotNow();
           sendStack(room, seat);

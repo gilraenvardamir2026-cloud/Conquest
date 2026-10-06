@@ -30,6 +30,7 @@ import {
   type Battle,
   type BoardWarning,
   type ClientMsg,
+  type CommandCard,
   type DiceStatus,
   type Presence,
   type SeatsInfo,
@@ -160,6 +161,13 @@ export interface AppState {
   pending: { id: string; op: Op }[];
   peers: Record<string, Peer>;
   showDice: boolean;
+  /** Command tray open. */
+  showCommand: boolean;
+  /**
+   * Secret part of command stacks (cards not yet flipped, top first). Online:
+   * only our own seat's, as the server sends it. Offline: both seats.
+   */
+  stacks: Partial<Record<PlayerSeat, CommandCard[]>>;
   selection: Selection | null;
   tool: Tool;
   view: View;
@@ -212,6 +220,8 @@ export interface AppState {
   setLos: (l: Partial<LosState>) => void;
   setShowAllArcs: (v: boolean) => void;
   setShowDice: (v: boolean) => void;
+  setShowCommand: (v: boolean) => void;
+  setStack: (seat: PlayerSeat, cards: CommandCard[]) => void;
   /** Handle a message from the server (online mode). */
   receive: (m: ServerMsg) => void;
   setNet: (n: Partial<NetState>) => void;
@@ -241,6 +251,27 @@ function rebase(base: Battle, pending: { id: string; op: Op }[], seat: PlayerSea
 }
 
 const STORAGE_KEY = 'conquest.local.battle.v1';
+
+/** Where this browser remembers its command stacks: per room online, one slot offline. */
+const stacksKey = () => (ROUTE.page === 'room' ? `conquest.stacks.${ROUTE.code}` : 'conquest.local.stacks.v1');
+
+function loadStacks(): Partial<Record<PlayerSeat, CommandCard[]>> {
+  try {
+    const raw = localStorage.getItem(stacksKey());
+    const v = raw ? (JSON.parse(raw) as Partial<Record<PlayerSeat, CommandCard[]>>) : {};
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStacks() {
+  try {
+    localStorage.setItem(stacksKey(), JSON.stringify(useStore.getState().stacks));
+  } catch {
+    /* storage full or blocked: only the recovery copy is lost */
+  }
+}
 
 function loadSaved(): Battle | null {
   try {
@@ -273,6 +304,8 @@ export const useStore = create<AppState>((set, get) => ({
   pending: [],
   peers: {},
   showDice: false,
+  showCommand: false,
+  stacks: loadStacks(),
   selection: null,
   tool: 'select',
   view: { cx: 36, cy: 24, scale: 12 },
@@ -342,11 +375,13 @@ export const useStore = create<AppState>((set, get) => ({
     })),
   notify: (text, kind = 'info') => set({ toast: { text, kind, at: Date.now() } }),
   newBattle: (scenarioId, layoutId) => {
-    set({ battle: createBattle({ id: makeId(), scenarioId, layoutId }), selection: null, undoStack: [], history: [], checkResult: null, highlight: [], moveSession: null });
+    set({ battle: createBattle({ id: makeId(), scenarioId, layoutId }), selection: null, undoStack: [], history: [], checkResult: null, highlight: [], moveSession: null, stacks: {} });
+    saveStacks();
     get().zoomToFit();
   },
   loadBattle: (b) => {
-    set({ battle: normalizeBattle(b), selection: null, undoStack: [], history: [], checkResult: null, highlight: [], moveSession: null });
+    set({ battle: normalizeBattle(b), selection: null, undoStack: [], history: [], checkResult: null, highlight: [], moveSession: null, stacks: {} });
+    saveStacks();
     get().zoomToFit();
   },
   setShowHelp: (showHelp) => set({ showHelp }),
@@ -408,6 +443,11 @@ export const useStore = create<AppState>((set, get) => ({
   setLos: (l) => set((s) => ({ los: { ...s.los, ...l } })),
   setShowAllArcs: (showAllArcs) => set({ showAllArcs }),
   setShowDice: (showDice) => set({ showDice }),
+  setShowCommand: (showCommand) => set({ showCommand }),
+  setStack: (seat, cards) => {
+    set((s) => ({ stacks: { ...s.stacks, [seat]: cards } }));
+    saveStacks();
+  },
   setNet: (n) => set((s) => ({ net: { ...s.net, ...n } })),
 
   receive: (m) => {
@@ -434,6 +474,12 @@ export const useStore = create<AppState>((set, get) => ({
           net: { ...s.net, status: 'online', note: undefined, clientId: m.clientId, isHost: m.isHost, seats: m.seats, spectators: m.spectators, dice: m.dice, ready: true },
         });
         for (const p of kept) sendToServer({ t: 'op', id: p.id, op: p.op });
+        if (m.seat && m.stack) {
+          // The server lost our stack (it restarted without its files): hand back the one we remember.
+          const remembered = s.stacks[m.seat] ?? [];
+          if (!m.stack.length && remembered.length) sendToServer({ t: 'stackRestore', cards: remembered.map(({ kind, id }) => ({ kind, id })) });
+          else get().setStack(m.seat, m.stack);
+        }
         if (first) get().zoomToFit();
         return;
       }
@@ -476,6 +522,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       case 'dice':
         set({ net: { ...s.net, dice: m.dice } });
+        return;
+      case 'stack':
+        if (s.seat) get().setStack(s.seat, m.cards);
         return;
       case 'notice':
         get().notify(m.text, m.kind ?? 'error');
@@ -553,14 +602,20 @@ useStore.subscribe((s, prev) => {
   }
   if (s.mode !== 'local') return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(useStore.getState().battle));
-    } catch {
-      /* storage full or blocked: ignore */
-    }
-  }, 300);
+  saveTimer = setTimeout(saveLocal, 300);
 });
+
+function saveLocal() {
+  clearTimeout(saveTimer);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(useStore.getState().battle));
+  } catch {
+    /* storage full or blocked: ignore */
+  }
+}
+
+// Offline: never lose the last change to a quick reload or a closed tab.
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => useStore.getState().mode === 'local' && saveLocal());
 
 /** Convenience for components. */
 export const dispatch = (op: Op) => useStore.getState().dispatch(op);

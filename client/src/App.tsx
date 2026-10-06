@@ -6,6 +6,8 @@ import { LogPanel } from './panels/LogPanel';
 import { Roster } from './panels/Roster';
 import { Toolbar } from './panels/Toolbar';
 import { DiceTray } from './panels/DiceTray';
+import { CommandTray } from './panels/CommandTray';
+import { stackAction } from './commandActions';
 import { RoomOverlays } from './panels/RoomOverlays';
 import { useStore } from './store';
 import { refName, totalDamage } from '@conquest/shared';
@@ -15,6 +17,7 @@ export function App() {
   const showHelp = useStore((s) => s.showHelp);
   const showSettings = useStore((s) => s.showSettings);
   const showDice = useStore((s) => s.showDice);
+  const showCommand = useStore((s) => s.showCommand);
 
   // Global shortcuts (ignored while typing in a field).
   useEffect(() => {
@@ -83,6 +86,8 @@ export function App() {
       else if (e.key === 'd' || e.key === 'D') st.setTool('distance');
       else if (e.key === 'l' || e.key === 'L') startLos();
       else if (e.key === 'x' || e.key === 'X') st.setShowDice(!st.showDice);
+      else if (e.key === 'c' || e.key === 'C') st.setShowCommand(!st.showCommand);
+      else if ((e.key === 'n' || e.key === 'N') && st.showCommand && st.seat && st.battle.command[st.seat].locked) stackAction({ t: 'flip' });
       else if (e.key === 'g' || e.key === 'G') {
         st.setTool('ring');
         const ref = refFromSelection(st.selection);
@@ -124,6 +129,7 @@ export function App() {
         <LogPanel />
       </footer>
       {showDice && <DiceTray />}
+      {showCommand && <CommandTray />}
       <RoomOverlays />
       {showHelp && <HelpOverlay />}
       {showSettings && <SettingsDialog />}
