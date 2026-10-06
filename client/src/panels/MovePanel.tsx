@@ -151,10 +151,10 @@ export function MovePanel() {
               </button>
             </div>
             <div className="btn-row">
-              <button className="primary" onClick={applyAlign}>
+              <button className="primary" onClick={applyAlign} title="Add the alignment to the move (Enter)">
                 Apply (Enter)
               </button>
-              <button onClick={() => st.setAlign(null)}>Cancel</button>
+              <button onClick={() => st.setAlign(null)} title="Esc">Cancel</button>
             </div>
             <div className="muted small">The tool only proposes the pose; whether the move is allowed is up to the players.</div>
           </>

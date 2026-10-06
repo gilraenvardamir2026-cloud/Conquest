@@ -8,7 +8,7 @@ import { Toolbar } from './panels/Toolbar';
 import { DiceTray } from './panels/DiceTray';
 import { RoomOverlays } from './panels/RoomOverlays';
 import { useStore } from './store';
-import { applyAlign, movableFromSelection, nudge, pinCurrent, refFromSelection, startLos, startMoveForSelection } from './moveActions';
+import { applyAlign, cycle, movableFromSelection, nudge, panBy, pinCurrent, refFromSelection, startLos, startMoveForSelection, zoomBy } from './moveActions';
 
 export function App() {
   const showHelp = useStore((s) => s.showHelp);
@@ -42,7 +42,18 @@ export function App() {
         }
         if (k === 'q' || k === 'Q') return nudge('rotate', -turn);
         if (k === 'e' || k === 'E') return nudge('rotate', turn);
+      } else if (e.key.startsWith('Arrow')) {
+        // Nothing to move: the arrows pan the view.
+        e.preventDefault();
+        const d = e.shiftKey ? 400 : 80;
+        const [dx, dy] = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key as 'ArrowLeft'] ?? [0, 0];
+        panBy(dx, dy);
+        return;
       }
+      if (e.key === '+' || e.key === '=') return zoomBy(1.25);
+      if (e.key === '-' || e.key === '_') return zoomBy(0.8);
+      if (e.key === ']') return cycle(1);
+      if (e.key === '[') return cycle(-1);
       if (e.key === 'Enter') {
         if (m?.align) applyAlign();
         else if (m) st.commitMove();

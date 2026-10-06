@@ -110,7 +110,7 @@ export function Toolbar() {
         </button>
       </div>
       <div className="tb-group right">
-        <button onClick={() => st.setShowSettings(true)}>Settings</button>
+        <button onClick={() => st.setShowSettings(true)} title="Room and rules settings">Settings</button>
         <button onClick={() => st.setShowHelp(true)} title="Help and shortcuts (?)">
           ?
         </button>

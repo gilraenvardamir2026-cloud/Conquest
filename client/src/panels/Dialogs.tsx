@@ -147,36 +147,88 @@ function OnlineSettings() {
   );
 }
 
+/** Shortcut table. In the key column, single keys in [brackets] are drawn as keys. */
+const HELP: { title: string; rows: [string, string][] }[] = [
+  {
+    title: 'Board and view',
+    rows: [
+      ['Scroll · [+] [−]', 'Zoom (scroll zooms around the cursor)'],
+      ['Drag empty space · [Space] + drag · [Arrows] with nothing selected', 'Pan (Shift + arrows: further)'],
+      ['[F]', 'Zoom to fit'],
+      ['Click · [[] []]', 'Select a piece · step through the regiments on the board'],
+      ['[Esc]', 'Back out: closes a dialog, cancels the current step, then clears the selection'],
+      ['[A] (hold)', 'Show every facing arc (the selected piece always shows its own)'],
+      ['[V] · [T]', 'Select tool · draw terrain (click points, Enter to finish, Backspace removes the last)'],
+    ],
+  },
+  {
+    title: 'Moving',
+    rows: [
+      ['[M], or drag a regiment', 'Start a move. A ghost stays at the start; each segment is listed with the running total'],
+      ['Move handles', 'Front arrow: forward/back · side arrows: sideways · front corners: wheel · dashed ring: rotate about the centre · body: free drag (Shift: along the facing)'],
+      ['[Arrows] · [Q] [E]', 'Nudge 0.1" (Shift: 1") along its own axes · rotate 1° (Shift: 15°)'],
+      ['[Enter] · [Esc] · [Backspace]', 'Commit the move as one log entry · put it back · drop the last segment'],
+      ['Drag a reserve row onto the board', 'Deploy it there'],
+      ['Drag a character onto a friendly regiment', 'Join it (Detach… in the inspector moves it to another regiment)'],
+      ['[Delete]', 'Send the selected regiment to reserve (asks first)'],
+    ],
+  },
+  {
+    title: 'Measuring and line of sight',
+    rows: [
+      ['[R]', 'Ruler (snaps to corners and edge midpoints)'],
+      ['[D] · Ctrl-click a second piece', 'Closest distance between two things'],
+      ['[G]', 'Range rings around the selected regiment'],
+      ['[P]', 'Pin the current ruler, distance or rings for everyone'],
+      ['[L] · [[] []]', 'Line of sight from the selected regiment; brackets step through targets'],
+    ],
+  },
+  {
+    title: 'Game',
+    rows: [
+      ['[X]', 'Dice tray: roll, re-roll ticked dice once, roll-off'],
+      ['[Ctrl]+[Z]', 'Undo your last change'],
+      ['Army list… (roster)', 'Save your army to a file, or load a saved one into the reserve'],
+      ['[?]', 'This help'],
+    ],
+  },
+];
+
+/** "[Ctrl]+[Z] · Drag" → keys drawn as <kbd>, the rest as text. */
+function Keys({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]+\]|\[\]\])/g).filter(Boolean);
+  return (
+    <>
+      {parts.map((p, i) => (p.startsWith('[') && p.endsWith(']') && p.length > 2 ? <kbd key={i}>{p.slice(1, -1)}</kbd> : <span key={i}>{p}</span>))}
+    </>
+  );
+}
+
 export function HelpOverlay() {
   const close = () => useStore.getState().setShowHelp(false);
   return (
     <div className="modal-back" onClick={close}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-        <h2>Controls</h2>
-        <table className="keys">
-          <tbody>
-            <tr><td>Scroll</td><td>Zoom around the cursor</td></tr>
-            <tr><td>Drag empty space · Space + drag · middle button</td><td>Pan</td></tr>
-            <tr><td>Click</td><td>Select (Esc clears) · Ctrl-click a second thing: closest distance</td></tr>
-            <tr><td>M, or drag a regiment / character</td><td>Start a move. A ghost stays at the start; every segment is listed with the running total</td></tr>
-            <tr><td>Move handles</td><td>Front arrow: forward/back · side arrows: sideways · front corners: wheel · dashed ring: rotate about the centre · body: free drag (Shift: along the facing)</td></tr>
-            <tr><td>Arrow keys · Q / E</td><td>Nudge 0.1" (Shift 1") along its own axes · rotate 1° (Shift 15°)</td></tr>
-            <tr><td>Enter · Esc · Backspace</td><td>Commit the move as one log entry · revert it · drop the last segment</td></tr>
-            <tr><td>R · D · G</td><td>Ruler (snaps to corners and edge midpoints) · closest distance · range rings</td></tr>
-            <tr><td>X</td><td>Dice tray: roll, re-roll ticked dice once, roll-off</td></tr>
-            <tr><td>L</td><td>Line of sight: click the acting regiment, then a target; Sight or Volley mode in the panel</td></tr>
-            <tr><td>A (hold)</td><td>Show the facing arcs of every piece (the selected one always shows its arcs)</td></tr>
-            <tr><td>P</td><td>Pin the current ruler, distance or rings for both players</td></tr>
-            <tr><td>Drag a character onto a friendly regiment</td><td>Join it</td></tr>
-            <tr><td>Drag a reserve row onto the board</td><td>Deploy it there</td></tr>
-            <tr><td>Selected terrain</td><td>Round knob rotates (Shift: 15°); polygon vertices drag; squares add a vertex; Alt-click deletes one</td></tr>
-            <tr><td>V / T</td><td>Select tool / draw terrain</td></tr>
-            <tr><td>F</td><td>Zoom to fit</td></tr>
-            <tr><td>Delete</td><td>Send the selected regiment or character to reserve (asks first)</td></tr>
-            <tr><td>Ctrl+Z</td><td>Undo your last operation</td></tr>
-            <tr><td>?</td><td>This help</td></tr>
-          </tbody>
-        </table>
+      <div className="modal wide" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={(e) => e.stopPropagation()}>
+        <h2 id="help-title">Controls</h2>
+        <div className="help-cols">
+          {HELP.map((sec) => (
+            <section key={sec.title}>
+              <h3>{sec.title}</h3>
+              <table className="keys">
+                <tbody>
+                  {sec.rows.map(([keys, what]) => (
+                    <tr key={keys}>
+                      <td>
+                        <Keys text={keys} />
+                      </td>
+                      <td>{what}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          ))}
+        </div>
         <h3>Terrain keyword tags</h3>
         <p className="small">
           {Object.entries(KEYWORD_INITIALS).map(([k, v]) => (

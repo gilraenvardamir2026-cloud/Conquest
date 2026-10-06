@@ -27,7 +27,7 @@ export function MeasurePanel() {
           )}
           <div className="muted small">Snaps to stand corners and edge midpoints; hold Alt to place freely.</div>
           <div className="btn-row">
-            <button className="primary" disabled={!measure.ruler} onClick={pinCurrent}>
+            <button className="primary" disabled={!measure.ruler} onClick={pinCurrent} title="Keep it on the board for everyone (P)">
               Pin (P)
             </button>
             <button disabled={!measure.ruler} onClick={() => st.setMeasure({ ruler: null })}>
@@ -63,7 +63,7 @@ function DistanceSection({ b, close }: { b: Battle; close: React.ReactNode }) {
       )}
       {pair.length === 2 && !r && <div className="muted small">One of them is not on the board.</div>}
       <div className="btn-row">
-        <button className="primary" disabled={!r} onClick={pinCurrent}>
+        <button className="primary" disabled={!r} onClick={pinCurrent} title="Keep it on the board for everyone (P)">
           Pin (P)
         </button>
         <button disabled={!pair.length} onClick={() => useStore.getState().setMeasure({ pair: [] })}>
@@ -105,7 +105,7 @@ function RingSection({ b, close }: { b: Battle; close: React.ReactNode }) {
         <NumberField value={ring.custom ?? undefined} allowEmpty min={0.1} max={200} width={56} suffix='"' onCommit={(n) => set({ custom: n ?? null })} />
       </div>
       <div className="btn-row">
-        <button className="primary" disabled={!radii.length} onClick={pinCurrent}>
+        <button className="primary" disabled={!radii.length} onClick={pinCurrent} title="Keep them on the board for everyone (P)">
           Pin (P)
         </button>
         <button disabled={!ring.ref} onClick={() => set({ ref: null })}>

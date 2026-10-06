@@ -622,7 +622,12 @@ button.unit {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
 }
 .modal.wide {
-  width: 620px;
+  width: min(860px, calc(100vw - 32px));
+}
+.help-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 0 20px;
 }
 .modal h2 {
   margin: 0 0 8px;
@@ -645,8 +650,19 @@ button.unit {
   vertical-align: top;
 }
 .keys td:first-child {
-  font-weight: 600;
-  white-space: nowrap;
+  width: 40%;
+}
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 5px;
+  margin: 1px 1px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg);
+  font: 600 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center;
 }
 .kw-legend {
   display: inline-block;

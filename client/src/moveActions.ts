@@ -11,6 +11,7 @@ import {
   makeId,
   pieceAt,
   refName,
+  regimentCenter,
   rotateSegment,
   sidewaysSegment,
   type EntityRef,
@@ -100,4 +101,55 @@ export function startLos() {
   if (sel && sel.kind === 'regiment' && st.los.acting?.id !== sel.id) {
     st.setLos({ acting: { kind: sel.kind, id: sel.id }, target: st.los.target?.id === sel.id ? null : st.los.target });
   }
+}
+
+/** +/-: zoom about the middle of the view. */
+export function zoomBy(k: number) {
+  const st = useStore.getState();
+  st.setView({ scale: Math.max(3, Math.min(200, st.view.scale * k)) });
+}
+
+/** Arrow keys with nothing to move: pan the view by about 80 px (Shift: 400 px). */
+export function panBy(dx: number, dy: number) {
+  const st = useStore.getState();
+  st.setView({ cx: st.view.cx + dx / st.view.scale, cy: st.view.cy + dy / st.view.scale });
+}
+
+/**
+ * [ and ]: step through the regiments on the board (and, as line-of-sight
+ * targets, objective markers) without a mouse. With the LoS tool and an
+ * acting regiment, they step the target; otherwise the selection.
+ */
+export function cycle(dir: 1 | -1) {
+  const st = useStore.getState();
+  const b = st.battle;
+  const regs = b.regiments
+    .filter((r) => r.location === 'board' && !r.garrisonId)
+    .sort((p, q) => p.owner.localeCompare(q.owner) || p.name.localeCompare(q.name));
+  const step = <T,>(list: T[], i: number) => list[(((i + dir) % list.length) + list.length) % list.length];
+  const centre = (kind: 'regiment' | 'objective', id: string) => {
+    const r = kind === 'regiment' ? regs.find((x) => x.id === id) : undefined;
+    const m = kind === 'objective' ? b.objectiveMarkers.find((x) => x.id === id) : undefined;
+    const c = r ? regimentCenter(r) : m ? { x: m.x, y: m.y } : null;
+    if (c) st.centreOn(c.x, c.y);
+  };
+  if (st.tool === 'los' && st.los.acting) {
+    const actingId = st.los.acting.id;
+    const acting = regs.find((r) => r.id === actingId);
+    const targets = [
+      ...regs.filter((r) => r.id !== actingId && r.owner !== acting?.owner).map((r) => ({ kind: 'regiment' as const, id: r.id })),
+      ...b.objectiveMarkers.filter((m) => !m.destroyed).map((m) => ({ kind: 'objective' as const, id: m.id })),
+    ];
+    if (!targets.length) return st.notify('No target to pick');
+    const t = step(targets, targets.findIndex((x) => x.id === st.los.target?.id));
+    st.setLos({ target: t });
+    st.notify(`Target: ${refName(b, t)}`, 'info');
+    return centre(t.kind, t.id);
+  }
+  if (!regs.length) return st.notify('No regiment on the board');
+  const cur = st.selection?.kind === 'regiment' ? regs.findIndex((r) => r.id === st.selection!.id) : dir === 1 ? -1 : 0;
+  const r = step(regs, cur);
+  st.select({ kind: 'regiment', id: r.id });
+  if (st.tool === 'los') st.setLos({ acting: { kind: 'regiment', id: r.id }, target: null });
+  centre('regiment', r.id);
 }
