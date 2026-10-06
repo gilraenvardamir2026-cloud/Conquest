@@ -3,7 +3,7 @@
 // hold and each card as you flip it, never the order of the rest.
 
 import { useState } from 'react';
-import { availableCards, lastRevealed, regimentCenter, sameCard, type Battle, type PlayerSeat } from '@conquest/shared';
+import { availableCards, lastRevealed, regimentCenter, reserveCards, sameCard, type Battle, type CommandCard, type PlayerSeat } from '@conquest/shared';
 import { setDraft, stackAction } from '../commandActions';
 import { useStore } from '../store';
 
@@ -195,6 +195,48 @@ function MyStack({ seat, b, offline }: { seat: PlayerSeat; b: Battle; offline: b
             End round
           </button>
         )}
+      </div>
+      <AddReserveCard seat={seat} b={b} stack={stack} />
+    </div>
+  );
+}
+
+/** A reserve unit's card can join the locked stack at any point, anywhere among the unflipped cards. */
+function AddReserveCard({ seat, b, stack }: { seat: PlayerSeat; b: Battle; stack: CommandCard[] }) {
+  const options = reserveCards(b, seat, stack);
+  const [pick, setPick] = useState('');
+  const [position, setPosition] = useState(0);
+  if (!options.length) return null;
+  const chosen = options.find((c) => `${c.kind}:${c.id}` === pick) ?? options[0];
+  const at = Math.min(position, stack.length);
+  return (
+    <div className="add-reserve" role="group" aria-label="Add a reserve card">
+      <span className="muted small">Add a reserve card</span>
+      <div className="btn-row">
+        <select aria-label="Reserve card" value={`${chosen.kind}:${chosen.id}`} onChange={(e) => setPick(e.target.value)}>
+          {options.map((c) => (
+            <option key={`${c.kind}:${c.id}`} value={`${c.kind}:${c.id}`}>
+              {kindTag(c)}
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Where in the stack" value={at} onChange={(e) => setPosition(Number(e.target.value))}>
+          <option value={0}>on top (next)</option>
+          {stack.map((c, i) => (
+            <option key={i} value={i + 1}>
+              {i + 1 === stack.length ? 'at the bottom' : `after ${c.name}`}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => {
+            if (stackAction({ t: 'insert', card: { kind: chosen.kind, id: chosen.id }, position: at })) setPick('');
+          }}
+          title="Your opponent sees that a card was added, not which one or where"
+        >
+          Add
+        </button>
       </div>
     </div>
   );

@@ -125,6 +125,8 @@ export type Op =
   | { type: 'lockCommandStack'; seat: PlayerSeat; size: number }
   | { type: 'unlockCommandStack'; seat: PlayerSeat }
   | { type: 'revealCommandCard'; seat: PlayerSeat; card: CommandCard }
+  /** A reserve unit's card joined a locked stack (which card and where stays secret). */
+  | { type: 'addCommandCard'; seat: PlayerSeat }
   | { type: 'unrevealCommandCard'; seat: PlayerSeat }
   | { type: 'clearCommandStack'; seat: PlayerSeat }
   | { type: 'restore'; label: string; entries: RestoreEntry[] }
@@ -139,6 +141,7 @@ export const SERVER_ONLY_OPS: OpType[] = [
   'lockCommandStack',
   'unlockCommandStack',
   'revealCommandCard',
+  'addCommandCard',
   'unrevealCommandCard',
   'clearCommandStack',
   'restore',

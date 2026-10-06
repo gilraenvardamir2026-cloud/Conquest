@@ -1192,3 +1192,12 @@ a.button-link {
     animation: none;
   }
 }
+
+.add-reserve {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+.add-reserve select {
+  max-width: 130px;
+}

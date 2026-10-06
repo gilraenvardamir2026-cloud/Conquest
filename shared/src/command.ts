@@ -36,6 +36,14 @@ export function checkStack(b: Battle, seat: PlayerSeat, cards: { kind: string; i
   return { ok: true, cards: out };
 }
 
+/** Reserve units whose card can still join this round's locked stack. */
+export function reserveCards(b: Battle, seat: PlayerSeat, secret: CommandCard[]): CommandCard[] {
+  const used = [...secret, ...b.command[seat].revealed];
+  const inReserve = (c: CommandCard) =>
+    c.kind === 'regiment' ? b.regiments.find((r) => r.id === c.id)?.location === 'reserve' : b.characters.find((x) => x.id === c.id)?.location === 'reserve';
+  return availableCards(b, seat).filter((c) => inReserve(c) && !used.some((u) => sameCard(u, c)));
+}
+
 /** The card flipped most recently by either player, if any. */
 export function lastRevealed(b: Battle): (CommandCard & { at: number; seat: PlayerSeat }) | null {
   let best: (CommandCard & { at: number; seat: PlayerSeat }) | null = null;
@@ -53,7 +61,9 @@ export type StackAction =
   | { t: 'unlock' }
   | { t: 'flip' }
   | { t: 'unflip' }
-  | { t: 'clear' };
+  | { t: 'clear' }
+  /** Put a reserve unit's card into a locked stack; position 0 = on top. */
+  | { t: 'insert'; card: { kind: string; id: string }; position: number };
 
 /**
  * The dealer's side of a stack action: the seat's new secret stack and the
@@ -95,5 +105,12 @@ export function dealStack(
     }
     case 'clear':
       return { ok: true, secret: [], op: { type: 'clearCommandStack', seat } };
+    case 'insert': {
+      if (!pub.locked) return { ok: false, error: 'Lock the stack first (or simply add the card while building)' };
+      const card = reserveCards(b, seat, secret).find((c) => sameCard(c, action.card));
+      if (!card) return { ok: false, error: 'Only a reserve unit not already in this round\'s stack can be added' };
+      const at = Math.max(0, Math.min(secret.length, Math.floor(Number(action.position) || 0)));
+      return { ok: true, secret: [...secret.slice(0, at), card, ...secret.slice(at)], op: { type: 'addCommandCard', seat } };
+    }
   }
 }

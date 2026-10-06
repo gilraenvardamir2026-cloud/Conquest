@@ -266,6 +266,7 @@ const stackAction = z.discriminatedUnion('t', [
   z.object({ t: z.literal('flip') }),
   z.object({ t: z.literal('unflip') }),
   z.object({ t: z.literal('clear') }),
+  z.object({ t: z.literal('insert'), card: cardRef, position: z.number().int().min(0).max(100) }),
 ]);
 
 export const clientMsgSchema = z.discriminatedUnion('t', [

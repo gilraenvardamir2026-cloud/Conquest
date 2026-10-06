@@ -119,6 +119,7 @@ export function authorize(b: Battle, actor: Actor, op: Op): string | null {
     case 'lockCommandStack':
     case 'unlockCommandStack':
     case 'revealCommandCard':
+    case 'addCommandCard':
     case 'unrevealCommandCard':
     case 'clearCommandStack':
     case 'restore':

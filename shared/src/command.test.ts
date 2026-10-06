@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { availableCards, dealStack, lastRevealed, type StackAction } from './command';
+import { availableCards, dealStack, lastRevealed, reserveCards, type StackAction } from './command';
 import { createBattle } from './board';
 import { STAND_PRESETS } from './presets';
 import { applyOp } from './reducer';
@@ -82,6 +82,24 @@ describe('command stacks', () => {
     expect(t.act({ t: 'unlock' })).toBeNull();
     expect(t.b.command.p1).toMatchObject({ round: 0, locked: false });
     expect(t.secret.map((c) => c.id)).toEqual(['mil']);
+  });
+
+  it('a reserve card can join a locked stack at any position; on-board units cannot', () => {
+    const t = table();
+    t.act({ t: 'set', cards: [{ kind: 'regiment', id: 'mil' }, { kind: 'character', id: 'hero' }] });
+    expect(t.act({ t: 'insert', card: { kind: 'regiment', id: 'bow' }, position: 0 })).toContain('Lock the stack first');
+    t.act({ t: 'lock' });
+    t.act({ t: 'flip' });
+    // Hero rides with Men-at-Arms on the board; Bow is in reserve.
+    expect(reserveCards(t.b, 'p1', t.secret).map((c) => c.id)).toEqual(['bow']);
+    expect(t.act({ t: 'insert', card: { kind: 'regiment', id: 'mil' }, position: 0 })).toContain('Only a reserve unit');
+    expect(t.act({ t: 'insert', card: { kind: 'regiment', id: 'bow' }, position: 99 })).toBeNull();
+    expect(t.secret.map((c) => c.id)).toEqual(['hero', 'bow']);
+    expect(t.b.command.p1).toMatchObject({ size: 3, revealed: [{ id: 'mil' }] });
+    // Which card and where stay secret.
+    expect(t.b.log.at(-1)!.text).toBe('System: added a reserve card to the command stack (now 3 cards)');
+    expect(t.act({ t: 'insert', card: { kind: 'regiment', id: 'bow' }, position: 0 })).toContain('Only a reserve unit');
+    expect(reserveCards(t.b, 'p1', t.secret)).toEqual([]);
   });
 
   it('players cannot send stack operations themselves', async () => {

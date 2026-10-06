@@ -776,6 +776,16 @@ function reduce(b: Battle, env: OpEnvelope): Reduced {
         noUndo: true,
       };
     }
+    case 'addCommandCard': {
+      const c = b.command[op.seat];
+      if (!c.locked) fail('Lock the stack first');
+      if (c.size >= MAX_STACK) fail('The stack is full');
+      return {
+        battle: { ...b, command: { ...b.command, [op.seat]: { ...c, size: c.size + 1 } } },
+        text: `added a reserve card to the command stack (now ${c.size + 1} cards)`,
+        noUndo: true,
+      };
+    }
     case 'unrevealCommandCard': {
       const c = b.command[op.seat];
       const last = c.revealed.at(-1) ?? fail('No card to take back');
