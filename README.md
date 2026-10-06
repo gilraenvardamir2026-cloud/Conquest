@@ -7,9 +7,10 @@ exactly as with miniatures and a tape measure.
 
 ## Status
 
-The project is built in five milestones. **Milestones 1–4 are complete**:
-two players on different computers share a room by link, with spectators,
-live presence and server-rolled dice.
+The project was built in five milestones, **all complete**: two players on
+different computers share a room by link, with spectators, live presence,
+server-rolled dice, army lists, and a container ready for a free host
+([deploy guide](docs/DEPLOY.md)).
 
 | # | Milestone | State |
 |---|-----------|-------|
@@ -17,7 +18,7 @@ live presence and server-rolled dice.
 | 2 | Movement and measuring (move sessions, handles, ruler, distances, range rings, contact, Align to target) | done |
 | 3 | Facing arcs and line of sight | done |
 | 4 | Multiplayer (server, rooms, seats, presence, persistence) and RANDOM.ORG dice | done |
-| 5 | Polish, roster import/export, accessibility pass, Dockerfile, deploy guide | next |
+| 5 | Room recovery, army lists, shortcuts and help, accessibility pass, Dockerfile, deploy guide | done |
 
 ## Run locally
 
@@ -42,11 +43,14 @@ Server settings (environment variables):
 | Variable | Default | Meaning |
 |---|---|---|
 | `PORT` | 3001 | Port to listen on |
-| `DATA_DIR` | `./data` | Folder for room files (keep it on a persistent disk) |
+| `DATA_DIR` | `./data` | Folder for room files (a persistent disk is optional: see Persistence) |
 | `RANDOM_ORG_API_KEY` | — | RANDOM.ORG key; without it dice use Node's `crypto` fallback |
 
 For example `RANDOM_ORG_API_KEY=your-key npm run dev`. Never commit the key
 (`.env` is git-ignored); it stays on the server and is never sent to browsers.
+
+**Putting it online:** [docs/DEPLOY.md](docs/DEPLOY.md) walks through Render's
+free plan step by step (`Dockerfile` and `render.yaml` are in the repository).
 
 `/local` is an offline practice mode: one browser, autosaved to localStorage,
 with the **Acting as** switch standing in for the two seats.
@@ -68,6 +72,7 @@ shared/   Pure TypeScript, no DOM. Used by the client now and the server later.
   src/*.test.ts     Vitest suites
   src/auth.ts       Who may send which operation (ownership, board lock, spectators)
   src/protocol.ts   Client/server messages; src/schema.ts zod schemas for them
+  src/army.ts       Army lists: save a seat's units, check a file, turn it into operations
 client/   Vite + React + TypeScript, Zustand store, SVG board, net.ts (room socket)
 server/   Node + Express + ws: app.ts (API + WebSocket), rooms.ts (authority,
           undo, JSON persistence), dice.ts (RANDOM.ORG pool + fallback)
@@ -101,6 +106,17 @@ server/   Node + Express + ws: app.ts (API + WebSocket), rooms.ts (authority,
   On load the operations are replayed through the reducer. Rooms untouched for
   30 days are deleted. A reconnecting client asks for what it missed since its
   last sequence number (or gets a full snapshot).
+- **Recovery without a disk.** On a free host the files vanish when the server
+  restarts. If a room is gone when a seated player's browser reconnects, the
+  browser uploads its copy (`POST /api/rooms/:code/recover`); the server
+  checks it against a full schema plus cross-references, recreates the room
+  with that player as host and logs a note. For 15 minutes, a returning
+  browser gets back the seat it had, if still free; spectators wait for a
+  player to restore it. The first player to reconnect wins; if the other had
+  seen a few later operations, those are lost.
+- **Robustness.** An unexpected error while handling one message or applying
+  one operation is logged and reported to that client; it never stops the
+  server.
 - **Limits.** Messages over 256 KB close the connection; each connection may
   send about 40 messages a second (bursts of 80); presence is relayed at most
   20 times a second.
@@ -266,6 +282,17 @@ settings (⚙ = in the Settings dialog).
     die per player and re-rolls ties automatically (they are listed). If any
     die of a roll or re-roll came from the local fallback, the roll is marked
     *local*. In offline practice the browser rolls (marked local).
+33. **Characters never stand alone.** A character reaches the board only by
+    joining a regiment; dropping one on empty ground is refused, and the
+    reducer rejects placing an unattached character on the board.
+34. **Army lists** hold each regiment's stand count (casualties counted back
+    in), files, wounds per stand, stand size, LoS size, command stand, March,
+    Barrage range, notes, tags and starting character; positions and damage
+    are not saved. Loading adds everything to the reserve (asking first if the
+    player already has units). Destroyed characters are left out.
+35. **Colour check.** Settings warns when the two player colours are closer
+    than ΔE 30 for normal vision or simulated red-, green- or blue-blindness
+    (Machado et al. 2009). The default red and blue stay above 70 for all.
 
 ## Using the app
 
@@ -280,6 +307,9 @@ settings (⚙ = in the Settings dialog).
   keywords, footprint and garrison fields. Drag it to move; drag the round knob to rotate (Shift:
   15° steps); for polygons drag vertices, click the small squares to add one
   and Alt-click (or right-click) a vertex to delete it.
+- **Army lists**: *Army list…* in a player's roster saves that army to a file
+  (full strength, no positions) or loads a saved list into the reserve. The
+  list loaded last in this browser can be loaded again with one click.
 - **Regiments**: *+ Regiment* in a player's roster adds one to reserve. Deploy
   it with *Deploy to edge* or by dragging its roster row onto the board. The
   inspector edits name, owner, stand type, stand count, files, wounds per stand,
@@ -332,7 +362,8 @@ settings (⚙ = in the Settings dialog).
   selected, the piece they are moving (outlined where it would go), their
   ruler, distances, range rings, Align target and line-of-sight lines.
 - If the connection drops, a red banner appears and changes pause; the page
-  reconnects by itself and catches up.
+  reconnects by itself and catches up. If the server restarted and lost the
+  room, the first seated player's browser restores it automatically.
 - **Dice (X)**: number of dice (1–60), optional label and "success on ≤ X".
   Results reach both players at once, sorted, with the success count, the
   roller's colour and the source (RANDOM.ORG or local). Tick dice to re-roll
@@ -370,6 +401,15 @@ settings (⚙ = in the Settings dialog).
   the list in the right panel.
 - Touching stands are always highlighted in orange.
 
+### Keyboard and accessibility
+
 - **Shortcuts**: V select, M move, R ruler, D distance, G range rings, L line
-  of sight, A (hold) all arcs, X dice, T draw terrain, P pin, F fit, Enter commit, Esc cancel, Backspace drop segment,
-  arrows / Q / E nudge, Delete send to reserve (asks), Ctrl+Z undo, ? help.
+  of sight, A (hold) all arcs, X dice, T draw terrain, P pin, F fit, + / −
+  zoom, arrows pan (with nothing selected), [ / ] step through the regiments
+  on the board (with LoS: through the targets), Enter commit, Esc cancel,
+  Backspace drop segment, arrows / Q / E nudge, Delete send to reserve (asks),
+  Ctrl+Z undo, ? help (the full list, by topic).
+- Everything outside the board can be reached with Tab; roster rows act on
+  Enter or Space. Dialogs keep focus inside and give it back when closed. The
+  selected piece is announced to screen readers. axe-core reports no
+  violations on the home page, board, inspector, dice tray or settings.

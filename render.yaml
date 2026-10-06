@@ -1,0 +1,12 @@
+# Render Blueprint: New → Blueprint, pick this repository, then fill in
+# RANDOM_ORG_API_KEY when asked (or leave it empty for local dice).
+services:
+  - type: web
+    name: conquest-tabletop
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: false
+    envVars:
+      - key: RANDOM_ORG_API_KEY
+        sync: false
