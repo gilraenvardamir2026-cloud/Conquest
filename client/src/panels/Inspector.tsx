@@ -163,7 +163,21 @@ function RegimentInspector({ r, b, close }: { r: Regiment; b: Battle; close: Rea
           </span>
         </div>
         <div className="btn-row">
-          {r.location !== 'board' && <button onClick={() => deployRegiment(b, r)}>Deploy to edge</button>}
+          {r.location !== 'board' && (
+            <span className="deploy-group" role="group" aria-label="Deploy behind a table edge">
+              <span className="muted small">Deploy:</span>
+              <button onClick={() => deployRegiment(b, r, 'own')} title="Off the table, front rank touching your own long edge">
+                Own edge
+              </button>
+              {/* Left and right as seen from the owner's own table edge (Player 2 sits at the top). */}
+              <button onClick={() => deployRegiment(b, r, r.owner === 'p1' ? 'left' : 'right')} title="Off the table, front rank touching the side edge on your left, at your end">
+                Left edge
+              </button>
+              <button onClick={() => deployRegiment(b, r, r.owner === 'p1' ? 'right' : 'left')} title="Off the table, front rank touching the side edge on your right, at your end">
+                Right edge
+              </button>
+            </span>
+          )}
           {r.location !== 'reserve' && <button onClick={() => dispatch({ type: 'setRegimentLocation', id: r.id, location: 'reserve' })}>To reserve</button>}
           {r.location !== 'destroyed' && <button onClick={() => dispatch({ type: 'setRegimentLocation', id: r.id, location: 'destroyed' })}>Mark destroyed</button>}
           <button onClick={() => duplicateRegiment(r)}>Duplicate</button>

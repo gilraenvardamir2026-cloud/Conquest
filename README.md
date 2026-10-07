@@ -317,7 +317,14 @@ settings (⚙ = in the Settings dialog).
     A locked stack can be rebuilt only before its first card is flipped;
     *Take back* returns the last flipped card to the top; *End round* clears
     it. A card keeps the unit's name from when it was built.
-36. **Colour check.** Settings warns when the two player colours are closer
+36. **Deploying from reserve** puts the regiment off the table, behind the
+    edge line, with its front rank touching the edge and facing in. *Own
+    edge* centres it on the player's long edge; *Left edge* / *Right edge*
+    (as seen from the player's own edge, so Player 2's left is the board's
+    right) put it against that side edge at the player's end. If the spot is
+    taken it slides along the edge to the nearest free place. *Fit* frames
+    regiments waiting off the table too.
+37. **Colour check.** Settings warns when the two player colours are closer
     than ΔE 30 for normal vision or simulated red-, green- or blue-blindness
     (Machado et al. 2009). The default red and blue stay above 70 for all.
 
@@ -338,7 +345,9 @@ settings (⚙ = in the Settings dialog).
   (full strength, no positions) or loads a saved list into the reserve. The
   list loaded last in this browser can be loaded again with one click.
 - **Regiments**: *+ Regiment* in a player's roster adds one to reserve. Deploy
-  it with *Deploy to edge* or by dragging its roster row onto the board. The
+  it with *Deploy: Own edge / Left edge / Right edge* in the inspector (it waits
+  off the table with its front rank on that edge) or by dragging its roster row
+  onto the board. The
   inspector edits name, owner, stand type, stand count, files, wounds per stand,
   March, Barrage range, LoS size override, tags and shared notes.
 - **Wounds**: *Apply wounds* allocates N wounds by the rules above and logs the
