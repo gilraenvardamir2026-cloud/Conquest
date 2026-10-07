@@ -18,6 +18,7 @@ import { ROUTE } from './route';
 import {
   applyOp,
   boardCheck,
+  regimentPolygons,
   createBattle,
   describeMove,
   makeId,
@@ -288,11 +289,23 @@ const initialBattle = (): Battle =>
   ROUTE.page === 'room' ? createBattle({ id: ROUTE.code }) : loadSaved() ?? createBattle({ id: makeId(), scenarioId: 's1', layoutId: 'layout1' });
 
 function fitView(b: Battle, vw: number, vh: number): View {
-  // Board plus the reinforcement strips (2" each side) and a small margin.
-  const w = b.board.width + 6;
-  const h = b.board.depth + 8;
-  const scale = Math.max(1, Math.min(vw / w, vh / h));
-  return { cx: b.board.width / 2, cy: b.board.depth / 2, scale };
+  // Board plus the reinforcement strips (2" each side) and a small margin,
+  // grown to include regiments waiting off the table.
+  let x0 = -3;
+  let y0 = -4;
+  let x1 = b.board.width + 3;
+  let y1 = b.board.depth + 4;
+  for (const r of b.regiments) {
+    if (r.location !== 'board') continue;
+    for (const p of regimentPolygons(r).flat()) {
+      x0 = Math.min(x0, p.x - 1);
+      y0 = Math.min(y0, p.y - 1);
+      x1 = Math.max(x1, p.x + 1);
+      y1 = Math.max(y1, p.y + 1);
+    }
+  }
+  const scale = Math.max(1, Math.min(vw / (x1 - x0), vh / (y1 - y0)));
+  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, scale };
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -364,8 +377,10 @@ export const useStore = create<AppState>((set, get) => ({
     if (first) get().zoomToFit();
   },
   zoomToFit: () => {
-    const { battle, viewport } = get();
-    set({ view: fitView(battle, viewport.w, viewport.h) });
+    const { battle, viewport, flip } = get();
+    const v = fitView(battle, viewport.w, viewport.h);
+    // View coordinates are mirrored while the view is flipped.
+    set({ view: flip ? { ...v, cx: battle.board.width - v.cx, cy: battle.board.depth - v.cy } : v });
   },
   centreOn: (x, y) => set((s) => ({ view: { ...s.view, cx: s.flip ? s.battle.board.width - x : x, cy: s.flip ? s.battle.board.depth - y : y } })),
   toggleFlip: () =>

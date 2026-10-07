@@ -1225,3 +1225,10 @@ a.button-link {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.deploy-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}

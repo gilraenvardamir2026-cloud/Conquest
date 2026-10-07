@@ -4,12 +4,13 @@ import {
   armyFromBattle,
   armyOps,
   createRegiment,
+  deployPose,
   makeId,
   presetFor,
   REGIMENT_DEFAULTS,
-  regimentLocalBox,
   parseArmy,
   type ArmyList,
+  type DeployEdge,
   type Battle,
   type Character,
   type PlayerSeat,
@@ -18,22 +19,10 @@ import {
   type Terrain,
 } from '@conquest/shared';
 import { dispatch, useStore } from '../store';
-import { poseCentredAt, seatFacing } from '../board/theme';
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
-/** Pose at the centre of the owner's reinforcement edge, just inside the board, facing the enemy. */
-export function edgePose(b: Battle, owner: PlayerSeat, w: number, d: number) {
-  const angle = seatFacing(owner);
-  const cy = owner === 'p1' ? b.board.depth - d / 2 - 0.05 : d / 2 + 0.05;
-  const p = poseCentredAt(w, d, angle, { x: b.board.width / 2, y: cy });
-  return { x: round2(p.x), y: round2(p.y), angle };
-}
-
-export function deployRegiment(b: Battle, r: Regiment) {
-  const box = regimentLocalBox(r);
-  dispatch({ type: 'setRegimentLocation', id: r.id, location: 'board', pose: edgePose(b, r.owner, box.u1, box.v1) });
-  useStore.getState().select({ kind: 'regiment', id: r.id });
+/** Deploy from reserve: off the table, front rank touching the own long edge or a side edge (see shared/src/deploy.ts). */
+export function deployRegiment(b: Battle, r: Regiment, edge: DeployEdge = 'own') {
+  if (dispatch({ type: 'setRegimentLocation', id: r.id, location: 'board', pose: deployPose(b, r, edge) })) useStore.getState().select({ kind: 'regiment', id: r.id });
 }
 
 export function addRegiment(

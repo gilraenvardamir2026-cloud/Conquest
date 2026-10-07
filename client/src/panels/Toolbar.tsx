@@ -42,6 +42,9 @@ export function Toolbar() {
         <button className={`tool ${tool === 'los' ? 'on' : ''}`} aria-pressed={tool === 'los'} title="Line of sight and arcs (L)" onClick={() => startLos()}>
           LoS
         </button>
+        <button className={showCommand ? 'on' : ''} aria-pressed={showCommand} onClick={() => st.setShowCommand(!showCommand)} title="Command stacks (C)">
+          Command
+        </button>
         {toolBtn('drawTerrain', 'Draw terrain', 'T')}
         {toolBtn('placeZone', 'Place zone', '—', !custom, custom ? 'Place an objective zone' : 'Custom board only (scenario objectives are locked)')}
         {toolBtn('placeObjective', 'Place marker', '—', !custom, custom ? 'Place an objective marker' : 'Custom board only (scenario objectives are locked)')}
@@ -109,9 +112,6 @@ export function Toolbar() {
         {mode === 'local' ? <button onClick={() => setNewOpen(true)}>New battle</button> : <a className="button-link" href="/">New battle</a>}
         <button className={showDice ? 'on' : ''} aria-pressed={showDice} onClick={() => st.setShowDice(!showDice)} title="Dice tray (X)">
           Dice
-        </button>
-        <button className={showCommand ? 'on' : ''} aria-pressed={showCommand} onClick={() => st.setShowCommand(!showCommand)} title="Command stacks (C)">
-          Command
         </button>
       </div>
       <div className="tb-group right">
